@@ -3,14 +3,18 @@ import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { loadEnvFile } from "node:process";
 import { Command } from "commander";
 import { parse } from "yaml";
 import { ZodError } from "zod";
+import { startApi } from "@mcp-warden/api";
 import { WardenProxy, WardenTargetClient } from "@mcp-warden/core";
 import { createTrustBaseline, diffTrustBaseline, readTrustBaseline, writeTrustBaseline } from "@mcp-warden/policy";
 import { formatZodIssues, wardenConfigSchema } from "@mcp-warden/shared";
 
 const VERSION = "0.1.0";
+
+try { loadEnvFile(path.resolve(".env.local")); } catch { /* Live mode remains explicitly unavailable. */ }
 
 async function loadConfig(filePath: string) {
   const source = await readFile(filePath, "utf8");
@@ -98,6 +102,18 @@ program.command("doctor")
     }
     writeDiagnostic(`${process.env.OPENAI_API_KEY ? "PASS" : "INFO"} OpenAI API key ${process.env.OPENAI_API_KEY ? "is configured" : "is not configured (offline mode available)"}`);
     process.exitCode = nodeMajor >= 20 ? 0 : 1;
+  });
+
+program.command("dashboard")
+  .description("start the localhost dashboard and fixture session API")
+  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("-p, --port <number>", "localhost port", "4782")
+  .action(async ({ config, port }: { config: string; port: string }) => {
+    const parsedPort = Number(port);
+    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) throw new Error("Dashboard port must be between 1 and 65535");
+    const rootDir = process.cwd();
+    await startApi({ rootDir, configPath: path.resolve(config), dashboardRoot: path.join(rootDir, "apps", "dashboard", "dist") }, parsedPort);
+    writeDiagnostic(`MCP Warden dashboard listening on http://127.0.0.1:${parsedPort}`);
   });
 
 program.command("run")

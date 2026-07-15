@@ -1,5 +1,21 @@
 # Engineering decisions
 
+## 2026-07-15 — Responses API structured outputs with independent subchecks
+
+- Decision: Run scope, exfiltration, and tool-integrity checks independently with `Promise.all`, using the official OpenAI SDK Zod structured-output helper, then aggregate in TypeScript.
+- Alternatives: one combined model request; free-form JSON parsing; beta multi-agent orchestration.
+- Why: independent evidence and deterministic aggregation are easier to audit and cannot silently rewrite policy.
+- Trade-off: an ambiguous request uses three API calls and must be bounded by session caps and timeouts.
+- Source: human product requirement, aligned by Codex with current official OpenAI documentation.
+
+## 2026-07-15 — Dashboard serves recorded data without entering enforcement
+
+- Decision: Serve a labeled offline fixture session through a localhost-only Fastify API and keep the React dashboard outside proxy enforcement.
+- Alternatives: dashboard-mediated decisions; simulated live events without a label.
+- Why: the proxy must remain reliable when the dashboard is closed, and recorded results must never be presented as live GPT output.
+- Trade-off: interactive approval transport remains a later controlled feature.
+- Source: human product requirement, implemented by Codex.
+
 ## 2026-07-15 — High-severity deterministic findings are hard denies
 
 - Decision: Treat high and critical path, network, shell, secret-path, and explicit policy findings as `HARD_DENY` before semantic judgment.

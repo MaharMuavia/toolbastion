@@ -1,0 +1,14 @@
+{
+  "sessionId": "offline-day3-demo",
+  "label": "OFFLINE FIXTURE REPLAY",
+  "targetName": "vulnerable-demo",
+  "startedAt": "2026-07-15T08:00:00.000Z",
+  "mode": "enforce",
+  "events": [
+    {"eventId":"evt-001","sessionId":"offline-day3-demo","timestamp":"2026-07-15T08:00:00.000Z","eventType":"trust_verified","riskLevel":"none","summary":"Approved baseline matched four tools.","latencyMs":3,"judgeTokens":0,"cacheHit":false},
+    {"eventId":"evt-002","sessionId":"offline-day3-demo","timestamp":"2026-07-15T08:00:01.000Z","eventType":"policy_evaluated","riskLevel":"low","toolName":"read_project_file","decision":"ALLOW","summary":"Safe source read remained inside the canonical project root.","latencyMs":1,"judgeTokens":0,"cacheHit":false},
+    {"eventId":"evt-003","sessionId":"offline-day3-demo","timestamp":"2026-07-15T08:00:02.000Z","eventType":"call_blocked","riskLevel":"critical","toolName":"read_project_file","decision":"BLOCK","summary":"Traversal escaped the project root; target execution was skipped.","latencyMs":1,"judgeTokens":0,"cacheHit":false},
+    {"eventId":"evt-004","sessionId":"offline-day3-demo","timestamp":"2026-07-15T08:00:03.000Z","eventType":"policy_evaluated","riskLevel":"low","toolName":"run_project_command","decision":"ALLOW","summary":"Recorded semantic checks approved a project-local test command.","latencyMs":18,"judgeTokens":0,"cacheHit":false},
+    {"eventId":"evt-005","sessionId":"offline-day3-demo","timestamp":"2026-07-15T08:00:04.000Z","eventType":"call_blocked","riskLevel":"critical","toolName":"fetch_url","decision":"BLOCK","summary":"Loopback SSRF was denied deterministically.","latencyMs":1,"judgeTokens":0,"cacheHit":false}
+  ]
+}

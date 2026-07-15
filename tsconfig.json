@@ -1,14 +1,16 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
   "include": [
     "apps/**/*.ts",
+    "apps/**/*.tsx",
     "packages/**/*.ts",
     "examples/**/*.ts",
     "tests/**/*.ts",
     "eslint.config.js"
   ]
 }
-

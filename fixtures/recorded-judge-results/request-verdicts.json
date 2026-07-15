@@ -1,0 +1,12 @@
+{
+  "run_project_command": [
+    {"checkName":"scope_safety","verdict":"safe","riskLevel":"low","reason":"The recorded command is a project-local test command.","evidence":["npm test"]},
+    {"checkName":"exfiltration_risk","verdict":"safe","riskLevel":"none","reason":"No network destination or sensitive input is present.","evidence":[]},
+    {"checkName":"tool_integrity","verdict":"safe","riskLevel":"low","reason":"The arguments match the approved command schema.","evidence":["command is a string"]}
+  ],
+  "fetch_url": [
+    {"checkName":"scope_safety","verdict":"suspicious","riskLevel":"medium","reason":"The destination purpose is not established by context.","evidence":["context unavailable"]},
+    {"checkName":"exfiltration_risk","verdict":"suspicious","riskLevel":"high","reason":"The call may send information to an external destination.","evidence":["external network tool"]},
+    {"checkName":"tool_integrity","verdict":"safe","riskLevel":"low","reason":"The URL argument matches the approved schema.","evidence":[]}
+  ]
+}

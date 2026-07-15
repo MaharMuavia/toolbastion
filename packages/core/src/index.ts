@@ -5,8 +5,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { createJudgeProvider, type JudgeProvider } from "@mcp-warden/judge";
 import { ExactCallCache, applyRuntimeMode, diffTrustBaseline, evaluateDeterministic, readTrustBaseline, type TrustDiff } from "@mcp-warden/policy";
-import { sha256, targetServerConfigSchema, type DeterministicResult, type RequestDecision, type TargetServerConfig, type WardenConfig } from "@mcp-warden/shared";
+import { sha256, targetServerConfigSchema, type DeterministicResult, type JudgeVerdict, type RequestDecision, type TargetServerConfig, type WardenConfig } from "@mcp-warden/shared";
 
 export type LifecycleEvent = {
   eventId: string;
@@ -67,7 +68,7 @@ export class WardenTargetClient {
   }
 }
 
-type CachedDecision = { result: DeterministicResult; decision: RequestDecision };
+type CachedDecision = { result: DeterministicResult; decision: RequestDecision; judge?: JudgeVerdict };
 
 export class WardenProxy {
   readonly #config: WardenConfig;
@@ -75,6 +76,8 @@ export class WardenProxy {
   readonly #server: Server;
   readonly #emit: EventSink;
   readonly #cache = new ExactCallCache<CachedDecision>();
+  readonly #judge: JudgeProvider;
+  readonly #recentEvents: string[] = [];
   #tools: Awaited<ReturnType<WardenTargetClient["listTools"]>>["tools"] = [];
   #untrustedTools = new Set<string>();
 
@@ -82,6 +85,7 @@ export class WardenProxy {
     this.#config = config;
     this.#emit = emit;
     this.#target = new WardenTargetClient(config.target, emit);
+    this.#judge = createJudgeProvider(config);
     this.#server = new Server({ name: "mcp-warden", version: "0.1.0" }, { capabilities: { tools: {} } });
     this.#server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: this.#visibleTools() }));
     this.#server.setRequestHandler(CallToolRequestSchema, async (request) => this.#handleCall(request.params.name, request.params.arguments ?? {}));
@@ -124,10 +128,26 @@ export class WardenProxy {
     let cached = this.#config.cache.enabled ? this.#cache.get(fingerprint) : undefined;
     if (!cached) {
       const result = await evaluateDeterministic(toolName, args, this.#config);
-      cached = { result, decision: applyRuntimeMode(result, this.#config.mode) };
+      let decision = applyRuntimeMode(result, this.#config.mode);
+      let judge: JudgeVerdict | undefined;
+      if (result.resolution === "AMBIGUOUS" && this.#config.judge.enabled) {
+        judge = await this.#judge.evaluateRequest({
+          toolName,
+          untrustedDescription: tool?.description ?? "",
+          schemaSummary: tool?.inputSchema ?? {},
+          args,
+          policySummary: { paths: this.#config.paths, network: this.#config.network, toolRule: this.#config.tools.rules[toolName] ?? this.#config.tools.default },
+          deterministicEvidence: result.evidence,
+          recentEvents: this.#recentEvents,
+          baseRisk: this.#config.tools.rules[toolName]?.base_risk ?? "medium",
+          runtimeMode: this.#config.mode
+        });
+        decision = this.#config.mode === "shadow" ? "ALLOW" : judge.decision;
+      }
+      cached = judge ? { result, decision, judge } : { result, decision };
       if (this.#config.cache.enabled) this.#cache.set(fingerprint, cached, this.#config.cache.ttl_seconds);
     }
-    this.#emitEvent("policy_evaluated", { toolName, argsHash: sha256(args), decision: cached.decision, deterministic: cached.result, cacheHits: this.#cache.hits, cacheMisses: this.#cache.misses });
+    this.#emitEvent("policy_evaluated", { toolName, argsHash: sha256(args), decision: cached.decision, deterministic: cached.result, judge: cached.judge, cacheHits: this.#cache.hits, cacheMisses: this.#cache.misses });
     if (cached.decision !== "ALLOW") return this.#blocked(toolName, cached.decision === "BLOCK" ? "deterministic_block" : "user_approval_required", cached.result.reasonCodes);
     return this.#target.callTool(toolName, args);
   }
@@ -139,6 +159,8 @@ export class WardenProxy {
   }
 
   #emitEvent(eventType: LifecycleEvent["eventType"], payload: Record<string, unknown>): void {
+    this.#recentEvents.push(eventType);
+    if (this.#recentEvents.length > 20) this.#recentEvents.shift();
     this.#emit({ eventId: randomUUID(), timestamp: new Date().toISOString(), eventType, payload });
   }
 }

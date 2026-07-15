@@ -28,6 +28,30 @@ export const deterministicResultSchema = z.object({
 });
 export type DeterministicResult = z.infer<typeof deterministicResultSchema>;
 
+export const judgeSubcheckSchema = z.object({
+  checkName: z.enum(["scope_safety", "exfiltration_risk", "tool_integrity", "output_injection"]),
+  verdict: z.enum(["safe", "suspicious", "malicious", "unavailable"]),
+  riskLevel: riskLevelSchema,
+  reason: z.string().min(1),
+  evidence: z.array(z.string())
+});
+export type JudgeSubcheck = z.infer<typeof judgeSubcheckSchema>;
+
+export const judgeVerdictSchema = z.object({
+  decision: requestDecisionSchema,
+  riskLevel: riskLevelSchema,
+  subchecks: z.array(judgeSubcheckSchema),
+  reason: z.string().min(1),
+  reasonCodes: z.array(z.string()),
+  model: z.string().min(1),
+  latencyMs: z.number().nonnegative(),
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  cached: z.boolean(),
+  offlineReplay: z.boolean()
+});
+export type JudgeVerdict = z.infer<typeof judgeVerdictSchema>;
+
 export const targetServerConfigSchema = z.object({
   name: z.string().trim().min(1),
   command: z.string().trim().min(1),
@@ -64,11 +88,13 @@ const toolRuleSchema = z.object({
 
 const judgeSchema = z.object({
   enabled: z.boolean().default(true),
+  mode: z.enum(["live", "offline"]).default("live"),
   model: z.string().default("gpt-5.6"),
   reasoning_effort: z.enum(["low", "medium", "high"]).default("medium"),
   timeout_ms: z.number().int().positive().max(120_000).default(20_000),
   max_calls_per_session: z.number().int().nonnegative().default(40),
   parallel_subchecks: z.boolean().default(true),
+  fixture_file: z.string().default("./fixtures/recorded-judge-results/request-verdicts.json"),
   failure_policy: z.object({
     interactive: z.literal("ask_user").default("ask_user"),
     enforce: z.literal("block").default("block"),

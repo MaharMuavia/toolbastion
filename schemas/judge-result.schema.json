@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MCP Warden Judge Subcheck",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "checkName": {"type":"string","enum":["scope_safety","exfiltration_risk","tool_integrity","output_injection"]},
+    "verdict": {"type":"string","enum":["safe","suspicious","malicious","unavailable"]},
+    "riskLevel": {"type":"string","enum":["none","low","medium","high","critical"]},
+    "reason": {"type":"string"},
+    "evidence": {"type":"array","items":{"type":"string"}}
+  },
+  "required": ["checkName","verdict","riskLevel","reason","evidence"]
+}
