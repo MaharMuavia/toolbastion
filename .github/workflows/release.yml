@@ -18,13 +18,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Workspace packages export generated declarations. Build them before
+      # type-aware ESLint resolves cross-package imports on a clean runner.
+      - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:integration
       - run: npm run test:e2e
-      - run: npm run build
       - run: npm run evaluate
       - run: npm audit --audit-level=high
       - name: Build release assets
