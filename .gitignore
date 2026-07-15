@@ -1,12 +1,13 @@
 node_modules/
 dist/
 coverage/
+.test-tmp/
 .env
 .env.*
 !.env.example
 .warden/audit/
 .warden/cache/
 .warden/tmp/
+**/.warden/
 reports/*
 !reports/.gitkeep
-

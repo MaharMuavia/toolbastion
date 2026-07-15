@@ -5,8 +5,11 @@ import process from "node:process";
 const root = process.cwd();
 const workspaces = [
   { directory: "packages/shared", declarations: true },
+  { directory: "packages/detectors", declarations: true },
+  { directory: "packages/policy", declarations: true },
   { directory: "packages/core", declarations: true },
   { directory: "examples/benign-server", declarations: false },
+  { directory: "examples/vulnerable-server", declarations: false },
   { directory: "apps/cli", declarations: true }
 ];
 const tsupCli = path.join(root, "node_modules", "tsup", "dist", "cli-default.js");

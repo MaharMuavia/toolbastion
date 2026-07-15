@@ -1,0 +1,7 @@
+version: 2
+mode: lockdown
+target:
+  name: ""
+  command: ""
+network:
+  allowed_ports: [70000]

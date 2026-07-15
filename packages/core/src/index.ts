@@ -1,21 +1,17 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema
-} from "@modelcontextprotocol/sdk/types.js";
-import {
-  targetServerConfigSchema,
-  type TargetServerConfig
-} from "@mcp-warden/shared";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ExactCallCache, applyRuntimeMode, diffTrustBaseline, evaluateDeterministic, readTrustBaseline, type TrustDiff } from "@mcp-warden/policy";
+import { sha256, targetServerConfigSchema, type DeterministicResult, type RequestDecision, type TargetServerConfig, type WardenConfig } from "@mcp-warden/shared";
 
 export type LifecycleEvent = {
   eventId: string;
   timestamp: string;
-  eventType: "target_connecting" | "target_connected" | "tools_listed" | "tool_forwarded" | "target_closed";
+  eventType: "target_connecting" | "target_connected" | "tools_listed" | "trust_verified" | "policy_evaluated" | "call_blocked" | "tool_forwarded" | "target_closed";
   payload: Record<string, unknown>;
 };
 
@@ -29,19 +25,12 @@ export class WardenTargetClient {
   #connected = false;
 
   constructor(config: TargetServerConfig, emit: EventSink = () => undefined) {
-    this.#config = targetServerConfigSchema.parse(config);
+    this.#config = targetServerConfigSchema.parse({ ...config, env_allowlist: config.envAllowlist });
     this.#emit = emit;
-    this.#client = new Client(
-      { name: "mcp-warden", version: "0.1.0" },
-      { capabilities: {} }
-    );
-    const transportOptions: ConstructorParameters<typeof StdioClientTransport>[0] = {
-      command: this.#config.command,
-      args: this.#config.args,
-      stderr: "pipe"
-    };
-    if (this.#config.cwd !== undefined) transportOptions.cwd = this.#config.cwd;
-    this.#transport = new StdioClientTransport(transportOptions);
+    this.#client = new Client({ name: "mcp-warden", version: "0.1.0" }, { capabilities: {} });
+    const options: ConstructorParameters<typeof StdioClientTransport>[0] = { command: this.#config.command, args: this.#config.args, stderr: "pipe" };
+    if (this.#config.cwd !== undefined) options.cwd = this.#config.cwd;
+    this.#transport = new StdioClientTransport(options);
   }
 
   async connect(): Promise<void> {
@@ -72,38 +61,84 @@ export class WardenTargetClient {
     this.#event("target_closed", { targetName: this.#config.name });
   }
 
-  #assertConnected(): void {
-    if (!this.#connected) throw new Error("Target MCP client is not connected");
-  }
-
+  #assertConnected(): void { if (!this.#connected) throw new Error("Target MCP client is not connected"); }
   #event(eventType: LifecycleEvent["eventType"], payload: Record<string, unknown>): void {
     this.#emit({ eventId: randomUUID(), timestamp: new Date().toISOString(), eventType, payload });
   }
 }
 
+type CachedDecision = { result: DeterministicResult; decision: RequestDecision };
+
 export class WardenProxy {
+  readonly #config: WardenConfig;
   readonly #target: WardenTargetClient;
   readonly #server: Server;
+  readonly #emit: EventSink;
+  readonly #cache = new ExactCallCache<CachedDecision>();
+  #tools: Awaited<ReturnType<WardenTargetClient["listTools"]>>["tools"] = [];
+  #untrustedTools = new Set<string>();
 
-  constructor(config: TargetServerConfig, emit?: EventSink) {
-    this.#target = new WardenTargetClient(config, emit);
-    this.#server = new Server(
-      { name: "mcp-warden", version: "0.1.0" },
-      { capabilities: { tools: {} } }
-    );
-    this.#server.setRequestHandler(ListToolsRequestSchema, async () => this.#target.listTools());
-    this.#server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      return this.#target.callTool(request.params.name, request.params.arguments ?? {});
-    });
+  constructor(config: WardenConfig, emit: EventSink = () => undefined) {
+    this.#config = config;
+    this.#emit = emit;
+    this.#target = new WardenTargetClient(config.target, emit);
+    this.#server = new Server({ name: "mcp-warden", version: "0.1.0" }, { capabilities: { tools: {} } });
+    this.#server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: this.#visibleTools() }));
+    this.#server.setRequestHandler(CallToolRequestSchema, async (request) => this.#handleCall(request.params.name, request.params.arguments ?? {}));
   }
 
   async runStdio(): Promise<void> {
-    await this.#target.connect();
+    await this.#initializeTarget();
     await this.#server.connect(new StdioServerTransport());
   }
 
-  async close(): Promise<void> {
-    await Promise.allSettled([this.#server.close(), this.#target.close()]);
+  async close(): Promise<void> { await Promise.allSettled([this.#server.close(), this.#target.close()]); }
+
+  async #initializeTarget(): Promise<void> {
+    await this.#target.connect();
+    this.#tools = (await this.#target.listTools()).tools;
+    const baselinePath = path.resolve(this.#config.project_root, ".warden", "warden.lock.json");
+    let diff: TrustDiff;
+    try {
+      diff = diffTrustBaseline(await readTrustBaseline(baselinePath), this.#tools);
+    } catch (error) {
+      diff = { added: this.#tools.map((tool) => tool.name), removed: [], schemaChanged: [], descriptionChanged: [], poisoned: [], unchanged: [] };
+      this.#emitEvent("trust_verified", { approved: false, error: error instanceof Error ? error.message : "baseline unavailable", diff });
+    }
+    this.#untrustedTools = new Set([...diff.added, ...diff.schemaChanged, ...diff.descriptionChanged, ...diff.poisoned]);
+    this.#emitEvent("trust_verified", { approved: this.#untrustedTools.size === 0, diff });
+  }
+
+  #visibleTools() {
+    return this.#config.mode === "enforce" ? this.#tools.filter((tool) => !this.#untrustedTools.has(tool.name)) : this.#tools;
+  }
+
+  async #handleCall(toolName: string, args: Record<string, unknown>) {
+    if (this.#config.mode === "enforce" && this.#untrustedTools.has(toolName)) {
+      return this.#blocked(toolName, "tool_trust_not_approved", ["Tool metadata is new or changed from the approved baseline"]);
+    }
+    const tool = this.#tools.find((candidate) => candidate.name === toolName);
+    const schemaHash = sha256(tool?.inputSchema ?? {});
+    const policyHash = sha256(this.#config);
+    const fingerprint = this.#cache.fingerprint({ targetName: this.#config.target.name, toolName, schemaHash, policyHash, args, mode: this.#config.mode });
+    let cached = this.#config.cache.enabled ? this.#cache.get(fingerprint) : undefined;
+    if (!cached) {
+      const result = await evaluateDeterministic(toolName, args, this.#config);
+      cached = { result, decision: applyRuntimeMode(result, this.#config.mode) };
+      if (this.#config.cache.enabled) this.#cache.set(fingerprint, cached, this.#config.cache.ttl_seconds);
+    }
+    this.#emitEvent("policy_evaluated", { toolName, argsHash: sha256(args), decision: cached.decision, deterministic: cached.result, cacheHits: this.#cache.hits, cacheMisses: this.#cache.misses });
+    if (cached.decision !== "ALLOW") return this.#blocked(toolName, cached.decision === "BLOCK" ? "deterministic_block" : "user_approval_required", cached.result.reasonCodes);
+    return this.#target.callTool(toolName, args);
+  }
+
+  #blocked(toolName: string, reason: string, evidence: string[]) {
+    const eventId = randomUUID();
+    this.#emitEvent("call_blocked", { toolName, reason, evidence, eventId });
+    return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: reason === "user_approval_required" ? "ASK_USER" : "BLOCK", reason, evidence, eventId }) }] };
+  }
+
+  #emitEvent(eventType: LifecycleEvent["eventType"], payload: Record<string, unknown>): void {
+    this.#emit({ eventId: randomUUID(), timestamp: new Date().toISOString(), eventType, payload });
   }
 }
-

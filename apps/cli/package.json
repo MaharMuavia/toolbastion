@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@mcp-warden/core": "0.1.0",
+    "@mcp-warden/policy": "0.1.0",
     "@mcp-warden/shared": "0.1.0",
     "commander": "15.0.0",
-    "yaml": "2.8.1"
+    "yaml": "2.8.1",
+    "zod": "4.4.3"
   }
 }

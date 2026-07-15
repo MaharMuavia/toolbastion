@@ -1,5 +1,21 @@
 # Engineering decisions
 
+## 2026-07-15 — High-severity deterministic findings are hard denies
+
+- Decision: Treat high and critical path, network, shell, secret-path, and explicit policy findings as `HARD_DENY` before semantic judgment.
+- Alternatives: send high-risk findings to GPT-5.6; let per-tool rules weaken them.
+- Why: clear security boundary violations must be deterministic, testable, and impossible for model output to override.
+- Trade-off: conservative classification can require users to narrow commands or policy rather than approve a risky exact call.
+- Source: human product requirement, implemented by Codex.
+
+## 2026-07-15 — Persistent baseline hash is verified before diffing
+
+- Decision: Reject edited `.warden/warden.lock.json` files whose canonical content does not match `baselineHash`.
+- Alternatives: trust the lockfile; keep baselines only in memory.
+- Why: persistent trust must distinguish target metadata changes from baseline tampering.
+- Trade-off: intentional manual edits are rejected and must use `warden trust approve`.
+- Source: human product requirement, implemented by Codex.
+
 ## 2026-07-15 — MCP SDK v1.29.0 exact pin
 
 - Decision: Pin `@modelcontextprotocol/sdk` to 1.29.0 in the lockfile.
