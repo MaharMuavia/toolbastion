@@ -3,10 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { inspectArguments, inspectShell, inspectUrl } from "../../packages/detectors/src/index.js";
 import { evaluateDeterministic } from "../../packages/policy/src/index.js";
-import { wardenConfigSchema } from "../../packages/shared/src/index.js";
+import { toolbastionConfigSchema } from "../../packages/shared/src/index.js";
 
 const root = path.resolve(".");
-const config = wardenConfigSchema.parse({
+const config = toolbastionConfigSchema.parse({
   version: 1,
   mode: "enforce",
   project_root: root,
@@ -43,7 +43,7 @@ describe("path detector", () => {
     await mkdir(outside, { recursive: true });
     try {
       await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
-      const symlinkConfig = wardenConfigSchema.parse({ ...config, project_root: project, target: { ...config.target, env_allowlist: [] } });
+      const symlinkConfig = toolbastionConfigSchema.parse({ ...config, project_root: project, target: { ...config.target, env_allowlist: [] } });
       const result = await evaluateDeterministic("read_project_file", { path: "escape/secret.txt" }, symlinkConfig);
       expect(result.reasonCodes).toContain("path_outside_project_root");
     } finally {
@@ -80,5 +80,22 @@ describe("shell detector", () => {
     ["rm -rf ./", "destructive_command"]
   ])("detects %s", (command, category) => {
     expect(inspectShell(command, "args.command").map((item) => item.category)).toContain(category);
+  });
+});
+
+describe("schema-independent argument inspection", () => {
+  it.each([
+    [{ input: "../../.ssh/id_rsa" }, "path_outside_project_root"],
+    [{ payload: "%2e%2e/%2e%2e/.env" }, "path_outside_project_root"],
+    [{ value: "http://127.0.0.1/admin" }, "loopback_destination"],
+    [{ payload: "rm -rf ./" }, "destructive_command"],
+    [{ nested: [{ value: "powershell -EncodedCommand ZgBhAGsAZQA=" }] }, "encoded_powershell"]
+  ])("detects hostile content even when a target uses misleading field names", async (args, category) => {
+    const findings = await inspectArguments("generic_action", args, config);
+    expect(findings.map((item) => item.category)).toContain(category);
+  });
+
+  it("does not treat ordinary text containing a slash as a path", async () => {
+    expect(await inspectArguments("echo", { input: "release notes for design/engineering" }, config)).toEqual([]);
   });
 });

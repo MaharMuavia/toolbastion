@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { auditEventSchema, canonicalJson, sha256, type AuditEvent } from "@mcp-warden/shared";
+import { auditEventSchema, canonicalJson, sha256, type AuditEvent } from "@toolbastion/shared";
 
 const SECRET_KEY = /(?:api[_-]?key|authorization|credential|password|passwd|secret|token|private[_-]?key|cookie)/i;
 const SECRET_VALUE = /(?:sk-(?:proj-)?[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|AKIA[A-Z0-9]{16}|Bearer\s+[A-Za-z0-9._~+/=-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/gi;

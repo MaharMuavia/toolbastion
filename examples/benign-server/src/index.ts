@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const server = new Server(
-  { name: "mcp-warden-benign-demo", version: "0.1.0" },
+  { name: "toolbastion-benign-demo", version: "0.1.0" },
   { capabilities: { tools: {} } }
 );
 

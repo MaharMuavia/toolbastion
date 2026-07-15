@@ -139,6 +139,8 @@ const judgeSchema = z.object({
   timeout_ms: z.number().int().positive().max(120_000).default(20_000),
   max_calls_per_session: z.number().int().nonnegative().default(40),
   parallel_subchecks: z.boolean().default(true),
+  context_file: z.string().optional(),
+  context_max_bytes: z.number().int().positive().max(65_536).default(8_192),
   fixture_file: z.string().default("./fixtures/recorded-judge-results/request-verdicts.json"),
   failure_policy: z.object({
     interactive: z.literal("ask_user").default("ask_user"),
@@ -147,7 +149,7 @@ const judgeSchema = z.object({
   }).prefault({})
 }).prefault({});
 
-export const wardenConfigSchema = z.object({
+export const toolbastionConfigSchema = z.object({
   version: z.literal(1),
   mode: runtimeModeSchema.default("interactive"),
   project_root: z.string().default("./"),
@@ -170,7 +172,7 @@ export const wardenConfigSchema = z.object({
     quarantine_untrusted_urls: z.boolean().default(true)
   }).prefault({}),
   audit: z.object({
-    directory: z.string().default("./.warden/audit"),
+    directory: z.string().default("./.toolbastion/audit"),
     redact_arguments: z.boolean().default(true),
     hash_chain: z.boolean().default(true),
     retain_raw_content: z.literal(false).default(false)
@@ -179,11 +181,11 @@ export const wardenConfigSchema = z.object({
     enabled: z.boolean().default(false),
     auto_apply: z.literal(false).default(false),
     run_regression_suite: z.boolean().default(true),
-    directory: z.string().default("./.warden/remediation"),
+    directory: z.string().default("./.toolbastion/remediation"),
     timeout_ms: z.number().int().positive().max(300_000).default(120_000)
   }).prefault({})
 });
-export type WardenConfig = z.output<typeof wardenConfigSchema>;
+export type ToolBastionConfig = z.output<typeof toolbastionConfigSchema>;
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);

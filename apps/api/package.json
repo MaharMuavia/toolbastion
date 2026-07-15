@@ -1,5 +1,5 @@
 {
-  "name": "@mcp-warden/api",
+  "name": "@toolbastion/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,10 @@
   "dependencies": {
     "@fastify/cors": "11.3.0",
     "@fastify/static": "10.1.0",
-    "@mcp-warden/policy": "0.1.0",
-    "@mcp-warden/shared": "0.1.0",
+    "@toolbastion/audit": "0.1.0",
+    "@toolbastion/policy": "0.1.0",
+    "@toolbastion/reports": "0.1.0",
+    "@toolbastion/shared": "0.1.0",
     "fastify": "5.10.0",
     "yaml": "2.9.0",
     "zod": "4.4.3"

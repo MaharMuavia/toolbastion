@@ -1,8 +1,8 @@
-# MCP Warden contributor guide
+# ToolBastion contributor guide
 
 ## Architecture
 
-- `apps/cli`: the `warden` command and stdio entrypoint.
+- `apps/cli`: the `toolbastion` command and stdio entrypoint.
 - `packages/core`: MCP proxy lifecycle, target transport, events, and errors.
 - `packages/shared`: validated boundary types and canonical hashing.
 - `examples/benign-server`: minimal target used for interoperability tests.

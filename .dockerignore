@@ -7,4 +7,5 @@ node_modules
 output
 reports
 .test-tmp
+.toolbastion
 .warden

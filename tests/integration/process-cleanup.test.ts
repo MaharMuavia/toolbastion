@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { WardenTargetClient } from "@mcp-warden/core";
+import { ToolBastionTargetClient } from "@toolbastion/core";
 
 function processExists(pid: number): boolean {
   try { process.kill(pid, 0); return true; }
@@ -9,7 +9,7 @@ function processExists(pid: number): boolean {
 
 describe("child process lifecycle", () => {
   it("terminates the target process when the transport closes", async () => {
-    const client = new WardenTargetClient({ name: "cleanup-fixture", command: process.execPath, args: [path.resolve("examples/vulnerable-server/dist/index.js")], cwd: path.resolve("."), envAllowlist: [] });
+    const client = new ToolBastionTargetClient({ name: "cleanup-fixture", command: process.execPath, args: [path.resolve("examples/vulnerable-server/dist/index.js")], cwd: path.resolve("."), envAllowlist: [] });
     await client.connect();
     const result = await client.callTool("get_process_id", {});
     const content = result.content as Array<{ type: string; text: string }>;
@@ -20,7 +20,7 @@ describe("child process lifecycle", () => {
   });
 
   it("reports target startup failure without hanging", async () => {
-    const client = new WardenTargetClient({ name: "missing-target", command: "warden-command-that-does-not-exist", args: [], envAllowlist: [] });
+    const client = new ToolBastionTargetClient({ name: "missing-target", command: "toolbastion-command-that-does-not-exist", args: [], envAllowlist: [] });
     await expect(client.connect()).rejects.toThrow();
     await expect(client.close()).resolves.toBeUndefined();
   });

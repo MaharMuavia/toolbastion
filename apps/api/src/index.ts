@@ -5,8 +5,11 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { parse } from "yaml";
 import { ZodError, z } from "zod";
-import { readTrustBaseline } from "@mcp-warden/policy";
-import { formatZodIssues, wardenConfigSchema } from "@mcp-warden/shared";
+import { auditFilePath, verifyAuditFile } from "@toolbastion/audit";
+import { readTrustBaseline } from "@toolbastion/policy";
+import { generateSessionReport, renderMarkdownReport } from "@toolbastion/reports";
+import { formatZodIssues, toolbastionConfigSchema } from "@toolbastion/shared";
+import { loadRuntimeSession } from "./runtime-events.js";
 
 const eventSchema = z.object({
   eventId: z.string(),
@@ -23,7 +26,7 @@ const eventSchema = z.object({
 });
 const sessionSchema = z.object({
   sessionId: z.string(),
-  label: z.literal("OFFLINE FIXTURE REPLAY"),
+  label: z.enum(["OFFLINE FIXTURE REPLAY", "LIVE LOCAL SESSION"]),
   targetName: z.string(),
   startedAt: z.string(),
   mode: z.string(),
@@ -38,6 +41,7 @@ export type ApiOptions = {
   configPath?: string;
   snapshotPath?: string;
   dashboardRoot?: string;
+  eventLogPath?: string;
 };
 
 async function loadSession(filePath: string): Promise<SnapshotSession> {
@@ -70,54 +74,90 @@ export async function createApi(options: ApiOptions) {
   const snapshotRoot = path.join(options.rootDir, "apps", "dashboard", "public", "snapshot");
   const session = await loadSession(snapshotPath);
   const attackScenarios = z.array(attackScenarioSchema).parse(JSON.parse(await readFile(path.join(options.rootDir, "fixtures", "dashboard-snapshot", "scenarios.json"), "utf8")));
+  const runtimeConfig = options.configPath
+    ? toolbastionConfigSchema.parse(parse(await readFile(options.configPath, "utf8")))
+    : undefined;
+  const eventLogPath = options.eventLogPath ?? (runtimeConfig ? path.join(runtimeConfig.project_root, ".toolbastion", "runtime-events.jsonl") : undefined);
+
+  const currentSession = async (): Promise<SnapshotSession> => {
+    if (eventLogPath) {
+      try {
+        return sessionSchema.parse(await loadRuntimeSession(eventLogPath, runtimeConfig?.target.name ?? session.targetName, runtimeConfig?.mode ?? "unknown"));
+      } catch { /* A missing, incomplete, or invalid live log falls back to the verified fixture. */ }
+    }
+    return session;
+  };
 
   app.get("/api/health", () => ({ status: "ok" }));
   app.get("/api/version", () => ({ version: "0.1.0" }));
   app.get("/api/config/status", async () => {
     if (!options.configPath) return { configured: false, openaiConfigured: Boolean(process.env.OPENAI_API_KEY), mode: "offline" };
-    const config = wardenConfigSchema.parse(parse(await readFile(options.configPath, "utf8")));
+    const config = toolbastionConfigSchema.parse(parse(await readFile(options.configPath, "utf8")));
     return { configured: true, openaiConfigured: Boolean(process.env.OPENAI_API_KEY), mode: config.judge.mode, runtimeMode: config.mode };
   });
-  app.get("/api/sessions", () => [{ ...session, events: undefined, eventCount: session.events.length, metrics: metrics(session) }]);
-  app.get("/api/sessions/:sessionId", (request, reply) => {
-    const { sessionId } = request.params as { sessionId: string };
-    return sessionId === session.sessionId ? { ...session, metrics: metrics(session) } : reply.code(404).send({ error: "session_not_found" });
+  app.get("/api/sessions", async () => {
+    const active = await currentSession();
+    return [{ ...active, events: undefined, eventCount: active.events.length, metrics: metrics(active) }];
   });
-  app.get("/api/sessions/:sessionId/events", (request, reply) => {
+  app.get("/api/sessions/:sessionId", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
-    return sessionId === session.sessionId ? session.events : reply.code(404).send({ error: "session_not_found" });
+    const active = await currentSession();
+    return sessionId === active.sessionId ? { ...active, metrics: metrics(active) } : reply.code(404).send({ error: "session_not_found" });
   });
-  app.get("/api/sessions/:sessionId/metrics", (request, reply) => {
+  app.get("/api/sessions/:sessionId/events", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
-    return sessionId === session.sessionId ? metrics(session) : reply.code(404).send({ error: "session_not_found" });
+    const active = await currentSession();
+    return sessionId === active.sessionId ? active.events : reply.code(404).send({ error: "session_not_found" });
+  });
+  app.get("/api/sessions/:sessionId/metrics", async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string };
+    const active = await currentSession();
+    return sessionId === active.sessionId ? metrics(active) : reply.code(404).send({ error: "session_not_found" });
   });
   app.get("/api/sessions/:sessionId/report", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
-    if (sessionId !== session.sessionId) return reply.code(404).send({ error: "session_not_found" });
+    const active = await currentSession();
+    if (sessionId !== active.sessionId) return reply.code(404).send({ error: "session_not_found" });
     const query = z.object({ format: z.enum(["json", "markdown"]).default("markdown") }).parse(request.query);
     const extension = query.format === "json" ? "json" : "md";
-    const content = await readFile(path.join(snapshotRoot, `report.${extension}`), "utf8");
-    return reply.header("Content-Type", query.format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8").header("Content-Disposition", `attachment; filename="warden-${sessionId}.${extension}"`).send(content);
+    let content: string;
+    if (active.label === "LIVE LOCAL SESSION" && runtimeConfig) {
+      const report = await generateSessionReport(auditFilePath(path.resolve(runtimeConfig.project_root, runtimeConfig.audit.directory), sessionId));
+      content = query.format === "json" ? `${JSON.stringify(report, null, 2)}\n` : renderMarkdownReport(report);
+    } else {
+      content = await readFile(path.join(snapshotRoot, `report.${extension}`), "utf8");
+    }
+    return reply.header("Content-Type", query.format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8").header("Content-Disposition", `attachment; filename="toolbastion-${sessionId}.${extension}"`).send(content);
   });
   app.get("/api/sessions/:sessionId/audit", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
-    if (sessionId !== session.sessionId) return reply.code(404).send({ error: "session_not_found" });
-    return reply.header("Content-Type", "application/x-ndjson; charset=utf-8").header("Content-Disposition", `attachment; filename="warden-${sessionId}-redacted.jsonl"`).send(await readFile(path.join(snapshotRoot, "audit.jsonl"), "utf8"));
+    const active = await currentSession();
+    if (sessionId !== active.sessionId) return reply.code(404).send({ error: "session_not_found" });
+    let content: string;
+    if (active.label === "LIVE LOCAL SESSION" && runtimeConfig) {
+      const file = auditFilePath(path.resolve(runtimeConfig.project_root, runtimeConfig.audit.directory), sessionId);
+      const verification = await verifyAuditFile(file);
+      if (!verification.valid) return reply.code(409).send({ error: "audit_verification_failed", issues: verification.errors });
+      content = await readFile(file, "utf8");
+    } else {
+      content = await readFile(path.join(snapshotRoot, "audit.jsonl"), "utf8");
+    }
+    return reply.header("Content-Type", "application/x-ndjson; charset=utf-8").header("Content-Disposition", `attachment; filename="toolbastion-${sessionId}-redacted.jsonl"`).send(content);
   });
-  app.get("/api/evaluation", async (_request, reply) => reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=warden-evaluation-summary.json").send(await readFile(path.join(snapshotRoot, "evaluation-summary.json"), "utf8")));
+  app.get("/api/evaluation", async (_request, reply) => reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=toolbastion-evaluation-summary.json").send(await readFile(path.join(snapshotRoot, "evaluation-summary.json"), "utf8")));
   app.get("/api/trust", async (_request, reply) => {
-    try { return await readTrustBaseline(path.join(options.rootDir, ".warden", "warden.lock.json")); }
+    try { return await readTrustBaseline(path.join(options.rootDir, ".toolbastion", "toolbastion.lock.json")); }
     catch { return reply.code(404).send({ error: "trust_baseline_unavailable" }); }
   });
   app.get("/api/policy", async (_request, reply) => {
     if (!options.configPath) return reply.code(404).send({ error: "policy_unavailable" });
     const yaml = await readFile(options.configPath, "utf8");
-    const config = wardenConfigSchema.parse(parse(yaml));
+    const config = toolbastionConfigSchema.parse(parse(yaml));
     return { yaml, valid: true, mode: config.mode };
   });
   app.post("/api/policy/validate", (request, reply) => {
     const body = z.object({ yaml: z.string().max(200_000) }).parse(request.body);
-    try { wardenConfigSchema.parse(parse(body.yaml)); return { valid: true, issues: [] }; }
+    try { toolbastionConfigSchema.parse(parse(body.yaml)); return { valid: true, issues: [] }; }
     catch (error) { if (error instanceof ZodError) return reply.code(400).send({ valid: false, issues: formatZodIssues(error) }); throw error; }
   });
   app.get("/api/demo/scenarios", () => attackScenarios.map((scenario) => ({ id: scenario.id, title: scenario.title, category: scenario.category, expected: scenario.expected, summary: scenario.summary })));
@@ -128,11 +168,27 @@ export async function createApi(options: ApiOptions) {
     if (!scenario) return reply.code(404).send({ error: "scenario_not_found" });
     return { mode: "OFFLINE FIXTURE REPLAY", sessionId: session.sessionId, scenarioId: scenario.id, expected: scenario.expected, actual: scenario.actual, matched: scenario.expected === scenario.actual, summary: scenario.summary };
   });
-  app.get("/api/events", (_request, reply) => {
+  app.get("/api/events", async (_request, reply) => {
+    const active = await currentSession();
     reply.hijack();
     reply.raw.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-    for (const event of session.events) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-    reply.raw.end();
+    for (const event of active.events) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (active.label === "OFFLINE FIXTURE REPLAY") {
+      reply.raw.end();
+      return;
+    }
+    let sent = active.events.length;
+    const timer = setInterval(() => {
+      void currentSession().then((next) => {
+        if (next.sessionId !== active.sessionId) {
+          reply.raw.end();
+          return;
+        }
+        for (const event of next.events.slice(sent)) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        sent = next.events.length;
+      }).catch(() => undefined);
+    }, 500);
+    reply.raw.once("close", () => clearInterval(timer));
   });
 
   if (options.dashboardRoot) {
@@ -146,7 +202,7 @@ export async function createApi(options: ApiOptions) {
   return app;
 }
 
-export async function startApi(options: ApiOptions, port = 4782, host = process.env.WARDEN_API_HOST ?? "127.0.0.1"): Promise<void> {
+export async function startApi(options: ApiOptions, port = 4782, host = process.env.TOOLBASTION_API_HOST ?? "127.0.0.1"): Promise<void> {
   const app = await createApi(options);
   await app.listen({ host, port });
 }

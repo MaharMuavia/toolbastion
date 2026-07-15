@@ -1,10 +1,10 @@
 import { createTwoFilesPatch } from "diff";
 import { stringify } from "yaml";
 import { describe, expect, it } from "vitest";
-import { codexExecArguments, verifyRemediation, type RemediationRequest } from "@mcp-warden/remediation";
-import { wardenConfigSchema } from "@mcp-warden/shared";
+import { codexExecArguments, verifyRemediation, type RemediationRequest } from "@toolbastion/remediation";
+import { toolbastionConfigSchema } from "@toolbastion/shared";
 
-const current = wardenConfigSchema.parse({
+const current = toolbastionConfigSchema.parse({
   version: 1,
   mode: "enforce",
   target: { name: "fixture", command: "node" },
@@ -32,7 +32,7 @@ describe("Codex remediation guardrails", () => {
   it("accepts a narrow allowlist patch while retaining attack blocks", async () => {
     const proposed = { ...current, network: { ...current.network, allow_domains: ["api.example.com"] } };
     const source = stringify(current);
-    const unifiedDiff = createTwoFilesPatch("warden.config.yaml", "warden.config.yaml", source, stringify(proposed));
+    const unifiedDiff = createTwoFilesPatch("toolbastion.config.yaml", "toolbastion.config.yaml", source, stringify(proposed));
     const result = await verifyRemediation({ output: { action: "PATCH", unifiedDiff, reasoning: "Narrow domain allowlist", expectedOutcome: "allow_legitimate_call" }, policyYaml: source, request, attackFixtures: attacks });
     expect(result.verified).toBe(true);
     expect(result.patchedYaml).toContain("api.example.com");
@@ -41,7 +41,7 @@ describe("Codex remediation guardrails", () => {
   it("rejects removal of an unrelated deny rule", async () => {
     const proposed = { ...current, paths: { ...current.paths, deny: ["**/.env"] }, network: { ...current.network, allow_domains: ["api.example.com"] } };
     const source = stringify(current);
-    const unifiedDiff = createTwoFilesPatch("warden.config.yaml", "warden.config.yaml", source, stringify(proposed));
+    const unifiedDiff = createTwoFilesPatch("toolbastion.config.yaml", "toolbastion.config.yaml", source, stringify(proposed));
     const result = await verifyRemediation({ output: { action: "PATCH", unifiedDiff, reasoning: "Unsafe broad weakening", expectedOutcome: "allow_legitimate_call" }, policyYaml: source, request, attackFixtures: attacks });
     expect(result.verified).toBe(false);
     expect(result.results.join(" ")).toContain("removes deny rules");

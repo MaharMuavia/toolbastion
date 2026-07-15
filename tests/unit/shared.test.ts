@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalJson, sha256, wardenConfigSchema } from "../../packages/shared/src/index.js";
+import { canonicalJson, sha256, toolbastionConfigSchema } from "../../packages/shared/src/index.js";
 
 describe("shared security primitives", () => {
   it("canonicalizes object keys before hashing", () => {
@@ -8,7 +8,7 @@ describe("shared security primitives", () => {
   });
 
   it("rejects unsupported configuration versions", () => {
-    expect(() => wardenConfigSchema.parse({ version: 2, target: {} })).toThrow();
+    expect(() => toolbastionConfigSchema.parse({ version: 2, target: {} })).toThrow();
   });
 });
 

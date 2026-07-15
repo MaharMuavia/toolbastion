@@ -24,6 +24,7 @@ type Session = {
   metrics: { totalToolCalls: number; allows: number; blocks: number; askUser: number; quarantines: number; deterministicResolutionRate: number; judgeEscalationRate: number; judgeTokens: number; cacheHitRate: number };
   staticLabel?: string;
 };
+type SessionSummary = Pick<Session, "sessionId" | "label">;
 type PolicyDetail = { yaml: string; valid: boolean; mode: string };
 type Scenario = { id: string; title: string; category: string; expected: string; actual?: string; summary: string };
 type ScenarioResult = { scenarioId: string; expected: string; actual: string; matched: boolean; summary: string };
@@ -48,8 +49,13 @@ function App() {
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await fetch("/api/sessions/offline-day3-demo");
-        if (!response.ok) throw new Error("Dashboard API unavailable");
+        const listResponse = await fetch("/api/sessions");
+        if (!listResponse.ok) throw new Error("Dashboard API unavailable");
+        const summaries = await listResponse.json() as SessionSummary[];
+        const active = summaries[0];
+        if (!active) throw new Error("No enforcement session is available");
+        const response = await fetch(`/api/sessions/${encodeURIComponent(active.sessionId)}`);
+        if (!response.ok) throw new Error("Active session is unavailable");
         const value = await response.json() as Session;
         setSession(value); setSelected(value.events.at(-1) ?? null);
       } catch {
@@ -65,6 +71,20 @@ function App() {
     };
     void load();
   }, []);
+  useEffect(() => {
+    if (!session || session.label !== "LIVE LOCAL SESSION") return;
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(session.sessionId)}`);
+        if (!response.ok) return;
+        const next = await response.json() as Session;
+        setSession(next);
+        setSelected((current) => current ? next.events.find((event) => event.eventId === current.eventId) ?? next.events.at(-1) ?? null : next.events.at(-1) ?? null);
+      } catch { /* Preserve the last verified live state during a transient refresh failure. */ }
+    };
+    const timer = window.setInterval(() => { void refresh(); }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [session?.label, session?.sessionId]);
   useEffect(() => { fetch("/api/policy").then((response) => response.ok ? response.json() as Promise<PolicyDetail> : null).then(setPolicy).catch(() => setPolicy(null)); }, []);
   useEffect(() => {
     fetch("/api/demo/scenarios").then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<Scenario[]>; }).then(setScenarios)
@@ -88,23 +108,25 @@ function App() {
   if (error) return <main className="center"><section className="empty"><p className="eyebrow">CONNECTION ERROR</p><h1>Security data is unavailable</h1><p>{error}. Start the localhost API and refresh.</p></section></main>;
   if (!session) return <main className="center"><p className="loading">Loading verified session…</p></main>;
 
+  const recorded = readOnly || session.label === "OFFLINE FIXTURE REPLAY";
+
   return <div className="shell">
     <aside>
-      <div className="brand"><div className="mark">W</div><div><strong>MCP Warden</strong><span>Security console</span></div></div>
+      <div className="brand"><div className="mark">TB</div><div><strong>ToolBastion</strong><span>Security console</span></div></div>
       <nav aria-label="Primary"><a className="active" href="#overview">Overview</a><a href="#timeline">Session timeline</a><a href="#attack-lab">Attack Lab</a><a href="#policy">Policy</a><a href="#reports">Reports</a></nav>
-      <div className="connection"><i></i><span>Local enforcement online</span><small>127.0.0.1 only</small></div>
+      <div className={`connection ${recorded ? "recorded" : ""}`}><i></i><span>{recorded ? "Recorded enforcement session" : "Local enforcement online"}</span><small>{recorded ? "Verified fixture · no live target" : "127.0.0.1 only"}</small></div>
     </aside>
     <main>
-      <header><div><p className="eyebrow">PROTECTED SESSION</p><h1>Runtime overview</h1><p className="subtitle">{readOnly ? session.staticLabel : "One target. Every call inspected before execution."}</p></div><div className="header-actions"><span className="badge">{readOnly ? "READ-ONLY SNAPSHOT" : session.label}</span><span className="mode">{session.mode}</span></div></header>
+      <header><div><p className="eyebrow">PROTECTED SESSION</p><h1>Runtime overview</h1><p className="subtitle">{recorded ? session.staticLabel ?? "Verified recorded evidence. No live target is connected." : "One target. Every call inspected before execution."}</p></div><div className="header-actions"><span className="badge">{readOnly ? "READ-ONLY SNAPSHOT" : session.label}</span><span className="mode">{session.mode}</span></div></header>
       <section className="metrics" id="overview">
         <Metric label="Tool calls" value={session.metrics.totalToolCalls} note={`${session.targetName} target`} />
         <Metric label="Deterministic" value={`${Math.round(session.metrics.deterministicResolutionRate * 100)}%`} note="Resolved without GPT" />
         <Metric label="Blocked" value={session.metrics.blocks} note="Stopped pre-execution" />
-        <Metric label="Judge tokens" value={session.metrics.judgeTokens} note="Recorded replay uses zero" />
+        <Metric label="Judge tokens" value={session.metrics.judgeTokens} note={recorded ? "Recorded replay usage" : "Current live session"} />
       </section>
       {latestCritical && <section className="alert"><span className="risk-dot critical"></span><div><p className="eyebrow">LATEST CRITICAL EVENT</p><strong>{latestCritical.summary}</strong></div><button onClick={() => setSelected(latestCritical)}>Inspect event</button></section>}
       <section className="attack-lab panel" id="attack-lab">
-        <div className="panel-head"><div><p className="eyebrow">ATTACK LAB</p><h2>{readOnly ? "Recorded scenario explorer" : "Offline fixture replay"}</h2></div><span className="badge">{scenarios.length} SCENARIOS</span></div>
+        <div className="panel-head"><div><p className="eyebrow">ATTACK LAB</p><h2>Recorded scenario explorer</h2></div><span className="badge">{scenarios.length} FIXTURES</span></div>
         <div className="lab-grid"><div className="scenario-list">{scenarios.map((scenario) => <button key={scenario.id} disabled={labBusy.length > 0} onClick={() => void runScenario(scenario)}><span>{scenario.category}</span><strong>{scenario.title}</strong><small>Expected: {scenario.expected}{labBusy === scenario.id ? " · running…" : ""}</small></button>)}</div>
           <div className="lab-result">{labResult ? <><p className="eyebrow">ACTUAL RESULT</p><strong className={labResult.matched ? "matched" : "mismatch"}>{labResult.actual}</strong><p>{labResult.summary}</p><small>Expected {labResult.expected} · {labResult.matched ? "matched" : "mismatch"}</small></> : <><p className="eyebrow">EXPECTED BEFORE EXECUTION</p><h3>Select a controlled scenario</h3><p>The expected result is shown on every card. The recorded or local actual result appears here afterward.</p></>}</div></div>
       </section>
@@ -115,7 +137,7 @@ function App() {
           </button>)}</div>
         </div>
         <div className="panel detail"><div className="panel-head"><div><p className="eyebrow">EVENT INSPECTOR</p><h2>{selected?.eventType ?? "Select an event"}</h2></div></div>
-          {selected && <div className="detail-body"><div className="detail-grid"><label>Risk<strong className={selected.riskLevel}>{selected.riskLevel}</strong></label><label>Decision<strong>{selected.decision ?? "—"}</strong></label><label>Latency<strong>{selected.latencyMs} ms</strong></label><label>Judge tokens<strong>{selected.judgeTokens}</strong></label></div><h3>Evidence summary</h3><p>{selected.summary}</p><h3>Audit identity</h3><code>{selected.eventId}</code><div className="chain"><i></i> Recorded fixture event • raw secrets unavailable</div></div>}
+          {selected && <div className="detail-body"><div className="detail-grid"><label>Risk<strong className={selected.riskLevel}>{selected.riskLevel}</strong></label><label>Decision<strong>{selected.decision ?? "—"}</strong></label><label>Latency<strong>{selected.latencyMs} ms</strong></label><label>Judge tokens<strong>{selected.judgeTokens}</strong></label></div><h3>Evidence summary</h3><p>{selected.summary}</p><h3>Audit identity</h3><code>{selected.eventId}</code><div className="chain"><i></i> {recorded ? "Recorded fixture event" : "Redacted live lifecycle event"} · raw secrets unavailable</div></div>}
         </div>
       </section>
       <section className="policy-panel panel" id="policy">
@@ -128,7 +150,7 @@ function App() {
         ["Redacted audit JSONL", readOnly ? snapshotUrl("audit.jsonl") : `/api/sessions/${session.sessionId}/audit`],
         ["Evaluation summary", readOnly ? snapshotUrl("evaluation-summary.json") : "/api/evaluation"]
       ].map(([label, href]) => <a key={label} href={href} download>{label}<span>↓</span></a>)}</div></section>
-      <footer><span>MCP Warden v0.1.0</span><span>Dashboard is outside the enforcement path</span></footer>
+      <footer><span>ToolBastion v0.1.0</span><span>Dashboard is outside the enforcement path</span></footer>
     </main>
   </div>;
 }

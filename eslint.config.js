@@ -3,7 +3,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/coverage/**", "node_modules/**", "eslint.config.js", ".test-tmp/**"] },
+  { ignores: ["**/dist/**", "**/coverage/**", "node_modules/**", "eslint.config.js", ".test-tmp/**", ".toolbastion/**", ".warden/**"] },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {

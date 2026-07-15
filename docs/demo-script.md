@@ -10,19 +10,19 @@ Show: title card and the architecture diagram from `docs/architecture.md`.
 
 ## 0:15–0:30 — Product
 
-Say: “MCP Warden sits between Codex and an MCP server. It verifies trusted tools, evaluates each call, inspects returned content and produces allow, ask or block decisions.”
+Say: “ToolBastion sits between Codex and an MCP server. It verifies trusted tools, evaluates each call, inspects returned content and produces allow, ask or block decisions.”
 
-Show: Agent → Warden → target, with audit/dashboard outside the enforcement path.
+Show: Agent → ToolBastion → target, with audit/dashboard outside the enforcement path.
 
 ## 0:30–0:55 — Safe operation
 
-Show a prepared terminal running `npm run demo:offline`. Highlight the safe project-file read, its low deterministic latency, and zero judge tokens.
+Show a prepared terminal running `npm run demo:offline`. This is the product's real keyless MCP proof, not Vitest output. Highlight the safe target execution and the evidence directory.
 
 Say: “Safe in-scope work is forwarded quickly. Deterministic policy resolves it without spending GPT tokens.”
 
 ## 0:55–1:25 — Real attack
 
-Show the Path Traversal Attack Lab card, its visible expected `BLOCK`, then click it and reveal actual `BLOCK — matched`. Show the critical timeline event.
+Show the terminal's `Renamed-field traversal` result and unchanged target execution counter, then show the corresponding recorded Path Traversal card and critical timeline event in Attack Lab.
 
 Say: “This traversal is blocked before target execution. The integration scenario checks the vulnerable server’s execution counter, proving the tool body was never entered.”
 
@@ -30,7 +30,7 @@ Say: “This traversal is blocked before target execution. The integration scena
 
 Show the poisoned-metadata or schema-change card and trust event.
 
-Say: “Warden persists approved tool schemas and descriptions. A changed or instruction-poisoned tool is quarantined until an explicit trust decision.”
+Say: “ToolBastion persists approved tool schemas and descriptions. A changed or instruction-poisoned tool is quarantined until an explicit trust decision.”
 
 ## 1:45–2:05 — Malicious output
 
@@ -48,11 +48,11 @@ Say: “Only ambiguous calls use GPT-5.6. Scope, exfiltration and tool-integrity
 
 Show a schema-validated `NO_CHANGE` or proposal record and the explicit apply command requiring `--yes`.
 
-Say: “Codex receives redacted evidence in a read-only process. Warden dry-runs every proposal and never auto-applies policy.”
+Say: “Codex receives redacted evidence in a read-only process. ToolBastion dry-runs every proposal and never auto-applies policy.”
 
 ## 2:40–2:50 — Close
 
-Say: “Codex accelerated the proxy, tests, fixtures and release workflow. GPT-5.6 powers ambiguous security judgment. MCP Warden makes agentic development safer, auditable and easier to govern.”
+Say: “Codex accelerated the proxy, tests, fixtures and release workflow. GPT-5.6 powers ambiguous security judgment. ToolBastion makes agentic development safer, auditable and easier to govern.”
 
 Show: repository name, Apache-2.0, keyless Docker command, and final public links after they are verified.
 

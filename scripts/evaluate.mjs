@@ -2,10 +2,10 @@
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { aggregateSubchecks } from "@mcp-warden/judge";
-import { inspectToolResult } from "@mcp-warden/output-firewall";
-import { applyRuntimeMode, createTrustBaseline, evaluateDeterministic, verifyTrustBaseline } from "@mcp-warden/policy";
-import { wardenConfigSchema } from "@mcp-warden/shared";
+import { aggregateSubchecks } from "@toolbastion/judge";
+import { inspectToolResult } from "@toolbastion/output-firewall";
+import { applyRuntimeMode, createTrustBaseline, evaluateDeterministic, verifyTrustBaseline } from "@toolbastion/policy";
+import { toolbastionConfigSchema } from "@toolbastion/shared";
 
 const root = process.cwd();
 const temporary = path.join(root, ".test-tmp", "evaluation");
@@ -18,7 +18,7 @@ await writeFile(path.join(projectRoot, "src", "index.ts"), "export {};\n", "utf8
 await writeFile(path.join(outside, "secret.txt"), "fixture only\n", "utf8");
 await symlink(outside, path.join(projectRoot, "link-outside"), process.platform === "win32" ? "junction" : "dir");
 
-const config = wardenConfigSchema.parse({
+const config = toolbastionConfigSchema.parse({
   version: 1,
   mode: "interactive",
   project_root: projectRoot,

@@ -1,29 +1,33 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { parse } from "yaml";
-import { ZodError } from "zod";
-import { startApi } from "@mcp-warden/api";
-import { auditFilePath, verifyAuditFile } from "@mcp-warden/audit";
-import { WardenProxy, WardenTargetClient } from "@mcp-warden/core";
-import { createTrustBaseline, diffTrustBaseline, readTrustBaseline, writeTrustBaseline } from "@mcp-warden/policy";
-import { applyProposal, readProposal, rejectProposal } from "@mcp-warden/remediation";
-import { generateSessionReport, renderMarkdownReport } from "@mcp-warden/reports";
-import { formatZodIssues, wardenConfigSchema } from "@mcp-warden/shared";
+import { z, ZodError } from "zod";
+import { startApi } from "@toolbastion/api";
+import { auditFilePath, readAuditEvents, redactAuditPayload, verifyAuditFile } from "@toolbastion/audit";
+import { ToolBastionProxy, ToolBastionTargetClient } from "@toolbastion/core";
+import { createTrustBaseline, diffTrustBaseline, readTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
+import { applyProposal, readProposal, rejectProposal, runCodexRemediation, saveProposal, verifyRemediation, type RemediationRequest } from "@toolbastion/remediation";
+import { generateSessionReport, renderMarkdownReport } from "@toolbastion/reports";
+import { formatZodIssues, toolbastionConfigSchema } from "@toolbastion/shared";
+import { runProfessionalDemo } from "./demo.js";
 
 const VERSION = "0.1.0";
+const INSTALL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 try { loadEnvFile(path.resolve(".env.local")); } catch { /* Live mode remains explicitly unavailable. */ }
 
 async function loadConfig(filePath: string) {
   const source = await readFile(filePath, "utf8");
   try {
-    return wardenConfigSchema.parse(parse(source));
+    return toolbastionConfigSchema.parse(parse(source));
   } catch (error) {
     if (error instanceof ZodError) throw new Error(`Invalid policy:\n${formatZodIssues(error).map((issue) => `  - ${issue}`).join("\n")}`);
     throw error;
@@ -31,11 +35,11 @@ async function loadConfig(filePath: string) {
 }
 
 function writeDiagnostic(message: string): void { process.stderr.write(`${message}\n`); }
-function trustFile(projectRoot: string): string { return path.resolve(projectRoot, ".warden", "warden.lock.json"); }
+function trustFile(projectRoot: string): string { return path.resolve(projectRoot, ".toolbastion", "toolbastion.lock.json"); }
 
 async function discover(configPath: string) {
   const config = await loadConfig(configPath);
-  const client = new WardenTargetClient(config.target);
+  const client = new ToolBastionTargetClient(config.target);
   try {
     await client.connect();
     return { config, tools: (await client.listTools()).tools };
@@ -45,16 +49,16 @@ async function discover(configPath: string) {
 }
 
 const program = new Command()
-  .name("warden")
+  .name("toolbastion")
   .description("Local-first security gateway for MCP coding agents")
-  .version(VERSION, "-V, --version", "print the Warden version");
+  .version(VERSION, "-V, --version", "print the ToolBastion version");
 
-program.command("version").description("print the Warden version").action(() => { process.stdout.write(`${VERSION}\n`); });
+program.command("version").description("print the ToolBastion version").action(() => { process.stdout.write(`${VERSION}\n`); });
 
-const policy = program.command("policy").description("validate and inspect Warden policy");
+const policy = program.command("policy").description("validate and inspect ToolBastion policy");
 policy.command("validate")
   .description("validate YAML and report precise paths")
-  .option("-c, --config <path>", "configuration file", "warden.config.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
   .action(async ({ config }: { config: string }) => {
     const parsed = await loadConfig(config);
     process.stdout.write(`VALID ${config} (version ${parsed.version}, mode ${parsed.mode})\n`);
@@ -64,7 +68,7 @@ const trust = program.command("trust").description("manage persistent MCP tool t
 for (const name of ["create", "approve"] as const) {
   trust.command(name)
     .description(`${name} the current target tool metadata`)
-    .option("-c, --config <path>", "configuration file", "warden.config.yaml")
+    .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
     .action(async ({ config: configPath }: { config: string }) => {
       const { config, tools } = await discover(configPath);
       const baseline = createTrustBaseline(config.target.name, tools);
@@ -75,14 +79,14 @@ for (const name of ["create", "approve"] as const) {
 }
 trust.command("inspect")
   .description("inspect the approved baseline")
-  .option("-c, --config <path>", "configuration file", "warden.config.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
   .action(async ({ config: configPath }: { config: string }) => {
     const config = await loadConfig(configPath);
     process.stdout.write(`${JSON.stringify(await readTrustBaseline(trustFile(config.project_root)), null, 2)}\n`);
   });
 trust.command("diff")
   .description("compare current tools with the approved baseline")
-  .option("-c, --config <path>", "configuration file", "warden.config.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
   .action(async ({ config: configPath }: { config: string }) => {
     const { config, tools } = await discover(configPath);
     const diff = diffTrustBaseline(await readTrustBaseline(trustFile(config.project_root)), tools);
@@ -92,7 +96,7 @@ trust.command("diff")
 
 const audit = program.command("audit").description("verify tamper-evident session logs");
 audit.command("verify <session-id>")
-  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
   .action(async (sessionId: string, { config: configPath }: { config: string }) => {
     const config = await loadConfig(configPath);
     const file = auditFilePath(path.resolve(config.project_root, config.audit.directory), sessionId);
@@ -103,7 +107,7 @@ audit.command("verify <session-id>")
 
 program.command("report <session-id>")
   .description("regenerate a verified report from a session audit log")
-  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
   .option("-f, --format <format>", "json or markdown", "markdown")
   .option("-o, --output <path>", "write report to a file")
   .action(async (sessionId: string, options: { config: string; format: string; output?: string }) => {
@@ -117,20 +121,68 @@ program.command("report <session-id>")
 
 const remediation = program.command("remediation").description("review verified Codex policy proposals");
 function remediationDirectory(config: Awaited<ReturnType<typeof loadConfig>>): string { return path.resolve(config.project_root, config.remediation.directory); }
+remediation.command("propose <session-id> <event-id>")
+  .description("generate and verify a Codex proposal from a real blocked audit event")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .requiredOption("--expected <outcome>", "allow_legitimate_call or keep_attack_blocked")
+  .action(async (sessionId: string, eventId: string, options: { config: string; expected: string }) => {
+    const expectedSecurityOutcome = new Set(["allow_legitimate_call", "keep_attack_blocked"]).has(options.expected)
+      ? options.expected as RemediationRequest["expectedSecurityOutcome"]
+      : undefined;
+    if (!expectedSecurityOutcome) throw new Error("Expected outcome must be allow_legitimate_call or keep_attack_blocked");
+    const config = await loadConfig(options.config);
+    const events = await readAuditEvents(auditFilePath(path.resolve(config.project_root, config.audit.directory), sessionId));
+    const event = events.find((candidate) => candidate.eventType === "call_blocked" && (candidate.eventId === eventId || candidate.payload.eventId === eventId));
+    if (!event) throw new Error(`Blocked event ${eventId} was not found in verified session ${sessionId}`);
+    const payload = event.payload;
+    const parsed = z.object({
+      eventId: z.string(),
+      toolName: z.string().min(1),
+      args: z.record(z.string(), z.unknown()),
+      deterministicEvidence: z.unknown(),
+      judgeVerdict: z.unknown().optional()
+    }).parse(payload);
+    const request: RemediationRequest = {
+      blockedEventId: parsed.eventId,
+      decision: payload.reason === "user_approval_required" ? "ASK_USER" : "BLOCK",
+      toolName: parsed.toolName,
+      args: parsed.args,
+      deterministicEvidence: parsed.deterministicEvidence,
+      expectedSecurityOutcome,
+      ...(parsed.judgeVerdict === undefined ? {} : { judgeVerdict: parsed.judgeVerdict })
+    };
+    const policyYaml = await readFile(options.config, "utf8");
+    const output = await runCodexRemediation({
+      workspace: path.resolve(config.project_root),
+      policyYaml,
+      request,
+      config,
+      schemaPath: path.join(INSTALL_ROOT, "schemas", "remediation.schema.json")
+    });
+    const attackFixtures = z.array(z.object({ tool: z.string(), args: z.record(z.string(), z.unknown()), category: z.string().optional() }))
+      .parse(JSON.parse(await readFile(path.join(INSTALL_ROOT, "fixtures", "attacks", "day2-corpus.json"), "utf8")))
+      .map((fixture) => fixture.category === undefined
+        ? { tool: fixture.tool, args: fixture.args }
+        : { tool: fixture.tool, args: fixture.args, category: fixture.category });
+    const verification = await verifyRemediation({ output, policyYaml, policyFileName: path.basename(options.config), request, attackFixtures });
+    const proposal = await saveProposal(remediationDirectory(config), request, output, verification);
+    process.stdout.write(`${JSON.stringify(proposal, null, 2)}\n`);
+    if (!proposal.verified) process.exitCode = 2;
+  });
 remediation.command("inspect <proposal-id>")
-  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
   .action(async (proposalId: string, { config: configPath }: { config: string }) => {
     const config = await loadConfig(configPath);
     process.stdout.write(`${JSON.stringify(await readProposal(remediationDirectory(config), proposalId), null, 2)}\n`);
   });
 remediation.command("reject <proposal-id>")
-  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
   .action(async (proposalId: string, { config: configPath }: { config: string }) => {
     const config = await loadConfig(configPath);
     process.stdout.write(`${JSON.stringify(await rejectProposal(remediationDirectory(config), proposalId), null, 2)}\n`);
   });
 remediation.command("apply <proposal-id>")
-  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
   .option("--yes", "explicitly confirm applying the verified proposal", false)
   .action(async (proposalId: string, options: { config: string; yes: boolean }) => {
     if (!options.yes) throw new Error("Applying a policy proposal requires explicit confirmation with --yes");
@@ -141,7 +193,7 @@ remediation.command("apply <proposal-id>")
 
 program.command("doctor")
   .description("check the local runtime and optional configuration")
-  .option("-c, --config <path>", "configuration file", "warden.config.yaml")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
   .action(async ({ config }: { config: string }) => {
     const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
     writeDiagnostic(`${nodeMajor >= 20 ? "PASS" : "FAIL"} Node.js ${process.versions.node} (requires >=20)`);
@@ -158,31 +210,68 @@ program.command("doctor")
   });
 
 program.command("dashboard")
-  .description("start the localhost dashboard and fixture session API")
-  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .description("start the localhost dashboard with live-event support and verified-fixture fallback")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
   .option("-p, --port <number>", "localhost port", "4782")
-  .action(async ({ config, port }: { config: string; port: string }) => {
+  .option("--event-log <path>", "runtime event log produced by toolbastion run")
+  .action(async ({ config, port, eventLog }: { config: string; port: string; eventLog?: string }) => {
     const parsedPort = Number(port);
     if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) throw new Error("Dashboard port must be between 1 and 65535");
     const rootDir = process.cwd();
-    await startApi({ rootDir, configPath: path.resolve(config), dashboardRoot: path.join(rootDir, "apps", "dashboard", "dist") }, parsedPort);
-    writeDiagnostic(`MCP Warden dashboard listening on ${process.env.WARDEN_API_HOST === "0.0.0.0" ? `container port ${parsedPort}` : `http://127.0.0.1:${parsedPort}`}`);
+    await startApi({
+      rootDir,
+      configPath: path.resolve(config),
+      dashboardRoot: path.join(rootDir, "apps", "dashboard", "dist"),
+      ...(eventLog === undefined ? {} : { eventLogPath: path.resolve(eventLog) })
+    }, parsedPort);
+    writeDiagnostic(`ToolBastion dashboard listening on ${process.env.TOOLBASTION_API_HOST === "0.0.0.0" ? `container port ${parsedPort}` : `http://127.0.0.1:${parsedPort}`}`);
   });
 
 program.command("run")
-  .description("run Warden as an MCP stdio server")
+  .description("run ToolBastion as an MCP stdio server")
   .requiredOption("-c, --config <path>", "configuration file")
-  .action(async ({ config: configPath }: { config: string }) => {
+  .option("--event-log <path>", "redacted lifecycle log for the local dashboard")
+  .action(async ({ config: configPath, eventLog }: { config: string; eventLog?: string }) => {
     const config = await loadConfig(configPath);
-    const proxy = new WardenProxy(config, (event) => writeDiagnostic(JSON.stringify(event)));
-    const shutdown = async () => { await proxy.close(); process.exit(0); };
-    process.once("SIGINT", () => { void shutdown(); });
-    process.once("SIGTERM", () => { void shutdown(); });
+    const eventLogPath = path.resolve(eventLog ?? path.join(config.project_root, ".toolbastion", "runtime-events.jsonl"));
+    await mkdir(path.dirname(eventLogPath), { recursive: true });
+    await writeFile(eventLogPath, "", { encoding: "utf8", mode: 0o600 });
+    let eventWrites = Promise.resolve();
+    const writeRuntimeEvent = (event: unknown, emitDiagnostic = true) => {
+      const redacted = redactAuditPayload(event);
+      if (emitDiagnostic) writeDiagnostic(JSON.stringify(redacted));
+      eventWrites = eventWrites
+        .then(() => appendFile(eventLogPath, `${JSON.stringify(redacted)}\n`, { encoding: "utf8", mode: 0o600 }))
+        .catch((error: unknown) => { writeDiagnostic(`WARN Dashboard lifecycle log unavailable: ${error instanceof Error ? error.message : "write failed"}`); });
+    };
+    const proxy = new ToolBastionProxy(config, writeRuntimeEvent);
+    let closing = false;
+    const heartbeat = setInterval(() => writeRuntimeEvent({ eventId: randomUUID(), timestamp: new Date().toISOString(), eventType: "heartbeat", payload: {} }, false), 5_000);
+    heartbeat.unref();
+    const shutdown = async () => {
+      if (closing) return;
+      closing = true;
+      clearInterval(heartbeat);
+      await proxy.close();
+      await eventWrites;
+    };
+    process.once("SIGINT", () => { void shutdown().then(() => process.exit(0)); });
+    process.once("SIGTERM", () => { void shutdown().then(() => process.exit(0)); });
     await proxy.runStdio();
-    writeDiagnostic(`MCP Warden protecting target ${config.target.name} in ${config.mode} mode`);
+    process.stdin.once("end", () => { void shutdown(); });
+    writeDiagnostic(`ToolBastion protecting target ${config.target.name} in ${config.mode} mode`);
+  });
+
+program.command("demo")
+  .description("run a real keyless MCP enforcement proof and verify its audit chain")
+  .option("--workspace <path>", "built ToolBastion workspace", process.cwd())
+  .option("--cleanup", "remove the ignored evidence directory after verification", false)
+  .action(async (options: { workspace: string; cleanup: boolean }) => {
+    const result = await runProfessionalDemo(path.resolve(options.workspace), { cleanup: options.cleanup });
+    if (!result.passed) process.exitCode = 2;
   });
 
 program.parseAsync().catch((error: unknown) => {
-  writeDiagnostic(`warden: ${error instanceof Error ? error.message : "unexpected error"}`);
+  writeDiagnostic(`toolbastion: ${error instanceof Error ? error.message : "unexpected error"}`);
   process.exitCode = 1;
 });

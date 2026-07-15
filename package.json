@@ -1,8 +1,17 @@
 {
-  "name": "mcp-warden",
+  "name": "toolbastion",
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
+  "description": "A zero-trust security gateway for MCP tool calls.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MaharMuavia/toolbastion.git"
+  },
+  "homepage": "https://maharmuavia.github.io/toolbastion/",
+  "bugs": {
+    "url": "https://github.com/MaharMuavia/toolbastion/issues"
+  },
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -22,7 +31,7 @@
     "test:integration": "vitest run tests/integration",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "demo:offline": "vitest run tests/integration/enforcement.test.ts --reporter=verbose",
+    "demo:offline": "node ./apps/cli/dist/index.js demo",
     "evaluate": "node ./scripts/evaluate.mjs",
     "snapshot": "node ./scripts/generate-snapshot.mjs",
     "verify:snapshot": "node ./scripts/verify-snapshot.mjs"

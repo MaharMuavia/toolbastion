@@ -17,14 +17,14 @@ Open `http://127.0.0.1:4782`. The compose file binds only to localhost, runs a r
 docker compose -f docker-compose.judge.yml down
 ```
 
-Before the first public image is published, build the exact release-candidate image locally and override the image name:
+To test a local source build instead of the published image, override the image name:
 
 ```bash
-docker build -t mcp-warden:0.1.0-rc.1 .
-WARDEN_IMAGE=mcp-warden:0.1.0-rc.1 WARDEN_PULL_POLICY=never docker compose -f docker-compose.judge.yml up
+docker build -t toolbastion:local .
+TOOLBASTION_IMAGE=toolbastion:local TOOLBASTION_PULL_POLICY=never docker compose -f docker-compose.judge.yml up
 ```
 
-In PowerShell, set `$env:WARDEN_IMAGE="mcp-warden:0.1.0-rc.1"` and `$env:WARDEN_PULL_POLICY="never"` before the compose command.
+In PowerShell, set `$env:TOOLBASTION_IMAGE="toolbastion:local"` and `$env:TOOLBASTION_PULL_POLICY="never"` before the compose command.
 
 ## Integrity and scope
 

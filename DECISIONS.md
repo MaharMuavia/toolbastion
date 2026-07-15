@@ -35,7 +35,7 @@
 ## 2026-07-15 — Read-only Codex proposals with local verification
 
 - Decision: Invoke actual `codex exec` with ephemeral state, ignored user config/rules, read-only sandbox, disabled approvals, schema output, and stdin-delivered redacted evidence; strip `OPENAI_API_KEY` and never auto-apply.
-- Alternatives: let Codex edit policy directly; accept free-form output; reuse Warden MCP configuration.
+- Alternatives: let Codex edit policy directly; accept free-form output; reuse ToolBastion MCP configuration.
 - Why: remediation must be useful without becoming a recursive or policy-weakening execution path.
 - Trade-off: patches require temporary application, schema validation, event reevaluation, regression checks, and explicit human apply.
 - Source: human requirement, aligned with the official Codex manual and verified against local Codex v0.136.0 help.
@@ -74,10 +74,10 @@
 
 ## 2026-07-15 — Persistent baseline hash is verified before diffing
 
-- Decision: Reject edited `.warden/warden.lock.json` files whose canonical content does not match `baselineHash`.
+- Decision: Reject edited `.toolbastion/toolbastion.lock.json` files whose canonical content does not match `baselineHash`.
 - Alternatives: trust the lockfile; keep baselines only in memory.
 - Why: persistent trust must distinguish target metadata changes from baseline tampering.
-- Trade-off: intentional manual edits are rejected and must use `warden trust approve`.
+- Trade-off: intentional manual edits are rejected and must use `toolbastion trust approve`.
 - Source: human product requirement, implemented by Codex.
 
 ## 2026-07-15 — MCP SDK v1.29.0 exact pin
@@ -98,10 +98,10 @@
 
 ## 2026-07-15 — One stdio target and dashboard-independent enforcement
 
-- Decision: Support exactly one local stdio MCP target per Warden process; keep API/dashboard out of the request path.
+- Decision: Support exactly one local stdio MCP target per ToolBastion process; keep API/dashboard out of the request path.
 - Alternatives: multiple targets; dashboard-mediated approvals.
 - Why: narrow scope and fail-safe enforcement are product requirements.
-- Trade-off: users run one Warden instance per target.
+- Trade-off: users run one ToolBastion instance per target.
 - Source: human-provided product decision.
 
 ## 2026-07-15 — Windows command shims

@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
-import type { DetectionEvidence, RiskLevel, WardenConfig } from "@mcp-warden/shared";
+import type { DetectionEvidence, RiskLevel, ToolBastionConfig } from "@toolbastion/shared";
 
 type LocatedString = { fieldPath: string; value: string; key: string };
 
@@ -21,6 +21,28 @@ function stringsIn(value: unknown, prefix = "args"): LocatedString[] {
     return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => stringsIn(child, `${prefix}.${key}`));
   }
   return [];
+}
+
+function hasPathSemantics(located: LocatedString): boolean {
+  const key = located.key.toLowerCase();
+  const decoded = decodePath(located.value).trim();
+  if (/(?:path|file|directory|folder|cwd|destination)/.test(key)) return true;
+  return /^(?:\.{0,2}[\\/]|~[\\/]|[a-zA-Z]:[\\/]|[\\/]{2}|[\\/]|%[^%]+%|\$\{?\w+\}?)/.test(decoded)
+    || /(?:^|[\\/])(?:\.env(?:\.|$)|\.ssh|\.aws|\.azure|id_rsa|id_ed25519|credentials)(?:[\\/]|$)/i.test(decoded)
+    || /(?:%2e|%2f|%5c)/i.test(located.value);
+}
+
+function hasUrlSemantics(located: LocatedString): boolean {
+  return /(?:url|uri|endpoint|webhook|host)/.test(located.key.toLowerCase())
+    || /^[a-z][a-z0-9+.-]*:\/\//i.test(located.value.trim());
+}
+
+function hasShellSemantics(toolName: string, located: LocatedString): boolean {
+  const key = located.key.toLowerCase();
+  const value = located.value.trim();
+  if (/(?:command|cmd|script|shell)/.test(key) || /(?:shell|command|exec|run)/i.test(toolName)) return true;
+  return /^(?:npm|npx|pnpm|yarn|node|python\d*|bash|sh|zsh|cmd|powershell|pwsh|curl|wget|git|docker|kubectl|echo|cat|type|get-content|rm|rmdir|del|remove-item|sudo|runas)\b/i.test(value)
+    || /\$\([^)]*\)|`[^`]+`|(?:^|\s)(?:rm\s+-rf|rmdir\s+\/s|remove-item\s+.*-recurse)/i.test(value);
 }
 
 function decodePath(value: string): string {
@@ -62,7 +84,7 @@ async function nearestRealParent(candidate: string): Promise<string> {
   }
 }
 
-export async function inspectPath(value: string, fieldPath: string, config: WardenConfig): Promise<DetectionEvidence[]> {
+export async function inspectPath(value: string, fieldPath: string, config: ToolBastionConfig): Promise<DetectionEvidence[]> {
   const findings: DetectionEvidence[] = [];
   if (value.includes("\0")) return [evidence("path", "path_null_byte", "critical", "Path contains a null byte", fieldPath)];
   const decoded = decodePath(value).trim();
@@ -117,7 +139,7 @@ function ipv4Class(host: string): "loopback" | "private" | "link_local" | "publi
   return "public";
 }
 
-export function inspectUrl(value: string, fieldPath: string, config: WardenConfig): DetectionEvidence[] {
+export function inspectUrl(value: string, fieldPath: string, config: ToolBastionConfig): DetectionEvidence[] {
   let parsed: URL;
   try { parsed = new URL(value); } catch {
     return [evidence("network", "invalid_url", "high", "Network destination is not a valid absolute URL", fieldPath)];
@@ -174,13 +196,12 @@ export function inspectShell(value: string, fieldPath: string): DetectionEvidenc
   return findings;
 }
 
-export async function inspectArguments(toolName: string, args: Record<string, unknown>, config: WardenConfig): Promise<DetectionEvidence[]> {
+export async function inspectArguments(toolName: string, args: Record<string, unknown>, config: ToolBastionConfig): Promise<DetectionEvidence[]> {
   const findings: DetectionEvidence[] = [];
   for (const located of stringsIn(args)) {
-    const key = located.key.toLowerCase();
-    if (/(?:path|file|directory|folder|cwd|destination)/.test(key)) findings.push(...await inspectPath(located.value, located.fieldPath, config));
-    if (/(?:url|uri|endpoint|webhook|host)/.test(key) || /^[a-z][a-z0-9+.-]*:\/\//i.test(located.value)) findings.push(...inspectUrl(located.value, located.fieldPath, config));
-    if (/(?:command|cmd|script|shell)/.test(key) || /(?:shell|command|exec|run)/i.test(toolName)) findings.push(...inspectShell(located.value, located.fieldPath));
+    if (hasPathSemantics(located)) findings.push(...await inspectPath(located.value, located.fieldPath, config));
+    if (hasUrlSemantics(located)) findings.push(...inspectUrl(located.value, located.fieldPath, config));
+    if (hasShellSemantics(toolName, located)) findings.push(...inspectShell(located.value, located.fieldPath));
   }
   return findings.filter((finding, index, all) => all.findIndex((candidate) => candidate.category === finding.category && candidate.fieldPath === finding.fieldPath) === index);
 }

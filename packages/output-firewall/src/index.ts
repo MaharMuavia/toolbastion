@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type DetectionEvidence, type RiskLevel, type ToolResultInspection, type WardenConfig } from "@mcp-warden/shared";
+import { type DetectionEvidence, type RiskLevel, type ToolResultInspection, type ToolBastionConfig } from "@toolbastion/shared";
 
 const SECRET_PATTERNS = [
   { category: "openai_key", expression: /sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gi },
@@ -16,14 +16,14 @@ const MAX_TEXT_LENGTH = 1_000_000;
 
 function riskRank(risk: RiskLevel): number { return ["none", "low", "medium", "high", "critical"].indexOf(risk); }
 
-function trustedUrl(raw: string, config: WardenConfig): boolean {
+function trustedUrl(raw: string, config: ToolBastionConfig): boolean {
   try {
     const host = new URL(raw).hostname.toLowerCase();
     return config.network.allow_domains.some((domain) => host === domain.toLowerCase() || (config.network.allow_subdomains && host.endsWith(`.${domain.toLowerCase()}`)));
   } catch { return false; }
 }
 
-export function inspectToolResult(result: unknown, config: WardenConfig): ToolResultInspection {
+export function inspectToolResult(result: unknown, config: ToolBastionConfig): ToolResultInspection {
   const evidence: DetectionEvidence[] = [];
   const redactions: Array<{ fieldPath: string; reason: string }> = [];
   let quarantine = false;

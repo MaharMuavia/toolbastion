@@ -6,7 +6,7 @@ The required `/feedback` Codex Session ID must come from the primary project tas
 
 Before submission:
 
-1. In the primary MCP Warden Codex task, run `/feedback`.
+1. In the primary ToolBastion Codex task, run `/feedback`.
 2. Submit the requested project feedback.
 3. Copy the returned Codex Session ID.
 4. Replace the status above with the exact ID.

@@ -2,15 +2,15 @@
 
 ## Scope and assets
 
-MCP Warden protects agent-initiated MCP tool discovery, tool calls, and returned results for one local stdio target. Assets include project files, local credentials, network authority, command execution, approved tool metadata, policy, audit integrity, and the agent's future decisions.
+ToolBastion protects agent-initiated MCP tool discovery, tool calls, and returned results for one local stdio target. Assets include project files, local credentials, network authority, command execution, approved tool metadata, policy, audit integrity, and the agent's future decisions.
 
-Warden is not an operating-system sandbox, endpoint protection product, identity provider, or remote MCP gateway.
+ToolBastion is not an operating-system sandbox, endpoint protection product, identity provider, or remote MCP gateway.
 
 ## Trust boundaries
 
 ```mermaid
 flowchart LR
-  U["Developer / approved config"] -->|trusted administration| W["Warden process"]
+  U["Developer / approved config"] -->|trusted administration| W["ToolBastion process"]
   A["Coding agent"] -->|untrusted MCP input| W
   W -->|bounded semantic evidence| G["OpenAI Responses API"]
   W -->|untrusted stdio| T["Target MCP process"]
@@ -20,7 +20,7 @@ flowchart LR
   C["Codex CLI"] -->|untrusted proposal| W
 ```
 
-The Warden installation, operating account, configured project root, and deliberate human approvals are trusted. MCP metadata, arguments, results, YAML input, model output, Codex output, subprocess output, and network-derived text are untrusted.
+The ToolBastion installation, operating account, configured project root, and deliberate human approvals are trusted. MCP metadata, arguments, results, YAML input, model output, Codex output, subprocess output, and network-derived text are untrusted.
 
 ## Threats and controls
 
@@ -34,6 +34,7 @@ The Warden installation, operating account, configured project root, and deliber
 | Prompt injection in output | returned instruction to call another tool | output injection scan and quarantine before agent forwarding | semantic attacks outside current patterns may pass |
 | Policy tampering | edited baseline hash or weakened remediation | baseline self-hash, Zod validation, hard-deny invariants, regression verification | an attacker controlling both repository and trusted anchor can replace them |
 | Model manipulation/failure | malicious prompt text, malformed result, timeout | delimited redacted evidence, isolated structured subchecks, Zod validation, deterministic aggregation, fail-closed enforce mode | model judgment remains probabilistic for ambiguous inputs |
+| Context-file escape/leak | context points outside project or contains a credential | canonical project-root confinement, 64 KiB hard cap, secret redaction, cache binding | novel secret formats may evade redaction; supplied context remains untrusted semantic input |
 | Remediation escalation | Codex proposes broader access | read-only `codex exec`, stripped key, schema output, temporary verification, no auto-apply, explicit `--yes` | a human may still approve a harmful but valid-looking patch |
 | Audit repudiation | line edit or deletion | canonical sequence and previous/event SHA-256 hashes, verification before reports | chain is not signed or externally anchored; whole-chain replacement is possible |
 | Denial of service | target hang, model timeout, malformed log | bounded timeouts/call caps, controlled errors, child cleanup, safe close | local resource exhaustion remains possible |
@@ -52,7 +53,7 @@ The Warden installation, operating account, configured project root, and deliber
 ## Out of scope and known limitations
 
 - Target behavior during process startup, shutdown, or outside a tool call.
-- Compromise of the Warden host, installation, OS account, or project administrator.
+- Compromise of the ToolBastion host, installation, OS account, or project administrator.
 - Multiple targets, remote HTTP/SSE MCP transports, remote OAuth, and enterprise identity.
 - Complete resources/prompts passthrough and full conversation context unless explicitly supplied.
 - Strong audit non-repudiation; the current chain is tamper-evident, not a signature or external attestation.

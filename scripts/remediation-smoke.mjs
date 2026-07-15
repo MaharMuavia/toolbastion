@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
-import { runCodexRemediation } from "@mcp-warden/remediation";
-import { wardenConfigSchema } from "@mcp-warden/shared";
+import { runCodexRemediation } from "@toolbastion/remediation";
+import { toolbastionConfigSchema } from "@toolbastion/shared";
 
 const workspace = process.cwd();
-const policyYaml = await readFile(path.join(workspace, "warden.config.example.yaml"), "utf8");
-const config = wardenConfigSchema.parse({ ...parse(policyYaml), remediation: { enabled: true, auto_apply: false, run_regression_suite: true, timeout_ms: 120_000 } });
+const policyYaml = await readFile(path.join(workspace, "toolbastion.config.example.yaml"), "utf8");
+const config = toolbastionConfigSchema.parse({ ...parse(policyYaml), remediation: { enabled: true, auto_apply: false, run_regression_suite: true, timeout_ms: 120_000 } });
 const output = await runCodexRemediation({
   workspace,
   policyYaml,

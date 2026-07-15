@@ -29,5 +29,5 @@ for (const workspace of workspaces) {
 
 const npmCli = process.env.npm_execpath;
 if (!npmCli) throw new Error("npm_execpath is unavailable; run this build through npm");
-const dashboard = spawnSync(process.execPath, [npmCli, "run", "build", "--workspace", "@mcp-warden/dashboard"], { cwd: root, env: process.env, shell: false, stdio: "inherit" });
+const dashboard = spawnSync(process.execPath, [npmCli, "run", "build", "--workspace", "@toolbastion/dashboard"], { cwd: root, env: process.env, shell: false, stdio: "inherit" });
 if (dashboard.status !== 0) process.exit(dashboard.status ?? 1);

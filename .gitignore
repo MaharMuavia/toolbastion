@@ -7,9 +7,11 @@ output/playwright/
 .env
 .env.*
 !.env.example
-.warden/audit/
-.warden/cache/
-.warden/tmp/
-**/.warden/
+.toolbastion/audit/
+.toolbastion/cache/
+.toolbastion/tmp/
+**/.toolbastion/
+# Ignore local artifacts produced by pre-ToolBastion development builds.
+.warden/
 reports/*
 !reports/.gitkeep

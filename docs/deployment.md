@@ -1,34 +1,27 @@
-# Deployment and publication handoff
+# Deployment and publication
 
-No Git remote is currently configured and the local GitHub CLI credential is invalid, so Day 6 prepares deployment automation without claiming a live deployment.
+ToolBastion publishes three independently verifiable artifacts from GitHub Actions.
 
-## Read-only dashboard
+## Read-only security console
 
-`.github/workflows/pages.yml` builds and deploys `apps/dashboard/dist` from `main`. The static app uses relative assets and falls back to committed redacted snapshot files. It has no live enforcement control and no credential.
+`.github/workflows/pages.yml` builds `apps/dashboard/dist` from `main` and deploys it to [GitHub Pages](https://maharmuavia.github.io/toolbastion/). The static application uses relative assets, reads only committed redacted fixtures, exposes no enforcement controls, and contains no credential.
 
-Owner steps:
-
-1. Create or select the public GitHub repository.
-2. Add it as `origin` and push `main`.
-3. In repository Settings → Pages, select GitHub Actions as the source if required.
-4. Verify the workflow's reported page URL in a private browser window.
-5. Confirm `READ-ONLY SNAPSHOT`, all 12 Attack Lab scenarios, navigation anchors, and four downloads.
-6. Record that exact URL in the README and submission description.
+Verify the workflow URL in an unauthenticated browser and confirm the `READ-ONLY SNAPSHOT` label, twelve Attack Lab scenarios, navigation anchors, and four report downloads. The dashboard remains outside the enforcement path.
 
 ## Container and GitHub Release
 
-`.github/workflows/release.yml` runs all gates, creates a Linux x64 archive and checksums, publishes a `linux/amd64` GHCR image, and creates a GitHub Release for pushed `v*` tags.
+`.github/workflows/release.yml` reruns every release gate for `v*` tags, builds a Linux x64 archive, emits SHA-256 checksums, publishes `ghcr.io/maharmuavia/toolbastion:<tag>`, and creates a GitHub Release.
 
-Owner steps after CI and Pages are green:
+For `v0.1.0`, verify all of the following:
 
 ```bash
-git tag -a v0.1.0 -m "MCP Warden v0.1.0"
-git push origin main
-git push origin v0.1.0
+gh release view v0.1.0 --repo MaharMuavia/toolbastion
+docker pull ghcr.io/maharmuavia/toolbastion:v0.1.0
+docker compose -f docker-compose.judge.yml up
 ```
 
-Verify the release, checksum, image pull, and keyless compose startup before replacing pending submission links. Never publish `.env.local` or any credential.
+The container must run as a non-root user, bind only to `127.0.0.1`, accept a read-only root filesystem, and serve the clearly labelled offline fixture without an OpenAI key.
 
-## Repository visibility
+## Publication gate
 
-Public visibility is an account-level state change and must be confirmed by the owner. Before switching visibility, run the secret scan documented in the submission checklist and inspect the full Git history, Actions variables, release assets, screenshots, and issue templates.
+Before any public push, inspect tracked files and full history for credentials, run the complete validation suite, and inspect screenshots at full resolution. Never publish `.env.local`, raw runtime audit directories, or credentials in Actions variables, releases, fixtures, screenshots, or issue templates.

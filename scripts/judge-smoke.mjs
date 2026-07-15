@@ -1,7 +1,7 @@
 import { OpenAIJudge } from "../packages/judge/dist/index.js";
-import { wardenConfigSchema } from "../packages/shared/dist/index.js";
+import { toolbastionConfigSchema } from "../packages/shared/dist/index.js";
 
-const config = wardenConfigSchema.parse({
+const config = toolbastionConfigSchema.parse({
   version: 1,
   mode: "interactive",
   target: { name: "smoke", command: "node", args: [], env_allowlist: [] },

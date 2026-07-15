@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { inspectToolResult } from "@mcp-warden/output-firewall";
-import { wardenConfigSchema } from "@mcp-warden/shared";
+import { inspectToolResult } from "@toolbastion/output-firewall";
+import { toolbastionConfigSchema } from "@toolbastion/shared";
 
-const config = wardenConfigSchema.parse({ version: 1, target: { name: "fixture", command: "node" }, network: { allow_domains: ["docs.example.com"] } });
+const config = toolbastionConfigSchema.parse({ version: 1, target: { name: "fixture", command: "node" }, network: { allow_domains: ["docs.example.com"] } });
 
 describe("output firewall", () => {
   it("passes ordinary structured results", () => {

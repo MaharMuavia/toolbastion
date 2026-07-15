@@ -4,7 +4,7 @@
 
 `npm run evaluate` loads the Day 2 attack and benign corpora plus the Day 5 hardening corpus. It runs real deterministic detectors, output inspection, trust/policy assertions, and deterministic judge-failure aggregation without network access. It writes `reports/evaluation-summary.json`; `npm run snapshot` copies a stable summary into the read-only dashboard.
 
-The 35 unique cases cover:
+The 40 unique cases cover:
 
 - path traversal, Windows/UNC paths, null bytes, environment expansion, and symlink escape;
 - secret-file access, command chaining/substitution, encoded PowerShell, download-to-shell, and destructive commands;
@@ -12,17 +12,18 @@ The 35 unique cases cover:
 - tool schema/description changes, poisoned metadata, and baseline tampering;
 - prompt-injection output, credential redaction, suspicious returned URLs, and ordinary output;
 - malformed or timed-out semantic judgment;
+- traversal, loopback SSRF, and destructive commands hidden under generic or nested argument fields, plus a benign slash-separated prose control;
 - safe project reads, approved network access, commands requiring review, and diagnostics.
 
 ## RC result
 
 | Metric | Result | Interpretation |
 | --- | ---: | --- |
-| Fixtures | 35/35 passed | Expected decisions matched this curated corpus. |
+| Fixtures | 40/40 passed | Expected decisions matched this curated corpus. |
 | True-positive rate | 100% | Every labeled attack case was detected in this corpus. |
 | False-positive rate | 0% | Every labeled benign case met its expected outcome; `ASK_USER` may be expected. |
-| Deterministic resolution | 91.43% | 32 of 35 cases required no semantic escalation. |
-| GPT escalation | 8.57% | Three structural failure/ambiguity cases exercised judge aggregation. |
+| Deterministic resolution | 90% | 36 of 40 cases required no semantic escalation. |
+| GPT escalation | 10% | Four structural failure/ambiguity or benign-review cases exercised judge aggregation. |
 | Output redaction accuracy | 100% | Curated output expectations matched. |
 | Cache hit rate | 0% | Cases are intentionally unique, so cache performance is not measured. |
 
@@ -51,7 +52,7 @@ Primary end-to-end proof:
 npm.cmd run demo:offline
 ```
 
-The path-traversal integration test calls Warden, receives `BLOCK`, then queries the deliberately vulnerable server's execution counter to prove the dangerous tool body was not entered. Output tests likewise verify that raw returned credentials/instructions are not forwarded.
+The product demo calls ToolBastion over MCP, receives `BLOCK` for traversal hidden under a generic `input` field, then queries the deliberately vulnerable server's execution counter to prove the dangerous tool body was not entered. It also verifies loopback SSRF, output quarantine, credential redaction, and the complete audit hash chain.
 
 ## Live acceptance status
 

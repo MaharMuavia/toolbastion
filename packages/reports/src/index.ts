@@ -1,5 +1,5 @@
-import { readAuditEvents } from "@mcp-warden/audit";
-import { sha256 } from "@mcp-warden/shared";
+import { readAuditEvents } from "@toolbastion/audit";
+import { sha256 } from "@toolbastion/shared";
 import { z } from "zod";
 
 export const sessionReportSchema = z.object({
@@ -48,5 +48,5 @@ export async function generateSessionReport(filePath: string, generatedAt = new 
 
 export function renderMarkdownReport(report: SessionReport): string {
   const rows = report.timeline.map((event) => `| ${event.sequence} | ${event.timestamp} | ${event.eventType} | ${event.decision ?? "—"} | ${event.riskLevel ?? "—"} |`).join("\n");
-  return `# MCP Warden session report\n\n- Session: \`${report.sessionId}\`\n- Source integrity: ${report.sourceIntegrity} tamper-evident hash chain\n- Events: ${report.summary.events}\n- Decisions: ${report.summary.allowed} allowed, ${report.summary.blocked} blocked, ${report.summary.askUser} ask-user\n- Output actions: ${report.summary.redacted} redacted, ${report.summary.quarantined} quarantined\n- Highest risk: ${report.summary.highestRisk}\n- Source hash: \`${report.sourceHash}\`\n\n| # | Timestamp | Event | Decision | Risk |\n| ---: | --- | --- | --- | --- |\n${rows}\n`;
+  return `# ToolBastion session report\n\n- Session: \`${report.sessionId}\`\n- Source integrity: ${report.sourceIntegrity} tamper-evident hash chain\n- Events: ${report.summary.events}\n- Decisions: ${report.summary.allowed} allowed, ${report.summary.blocked} blocked, ${report.summary.askUser} ask-user\n- Output actions: ${report.summary.redacted} redacted, ${report.summary.quarantined} quarantined\n- Highest risk: ${report.summary.highestRisk}\n- Source hash: \`${report.sourceHash}\`\n\n| # | Timestamp | Event | Decision | Risk |\n| ---: | --- | --- | --- | --- |\n${rows}\n`;
 }

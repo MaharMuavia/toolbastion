@@ -3,44 +3,56 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ElicitRequestSchema, ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { stringify } from "yaml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { WardenTargetClient } from "../../packages/core/src/index.js";
+import { ToolBastionTargetClient } from "../../packages/core/src/index.js";
 import { createTrustBaseline, writeTrustBaseline } from "../../packages/policy/src/index.js";
-import { wardenConfigSchema } from "../../packages/shared/src/index.js";
+import { toolbastionConfigSchema } from "../../packages/shared/src/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const projectRoot = path.join(root, ".test-tmp", "enforcement-project");
-const configPath = path.join(projectRoot, "warden.config.yaml");
+const configPath = path.join(projectRoot, "toolbastion.config.yaml");
 let transport: StdioClientTransport;
 let client: Client;
+let resolveToolListChanged: (() => void) | undefined;
+const toolListChanged = new Promise<void>((resolve) => { resolveToolListChanged = resolve; });
+let approvalDecision: "approve_once" | "deny" = "approve_once";
+let approvalRequests = 0;
 
 beforeAll(async () => {
   await mkdir(path.join(projectRoot, "src"), { recursive: true });
   await writeFile(path.join(projectRoot, "src", "safe.ts"), "export const safe = true;\n");
   const target = { name: "vulnerable-demo", command: process.execPath, args: [path.join(root, "examples/vulnerable-server/dist/index.js")], cwd: root, envAllowlist: [] };
-  const discovery = new WardenTargetClient(target);
+  const discovery = new ToolBastionTargetClient(target);
   await discovery.connect();
   const tools = (await discovery.listTools()).tools;
   await discovery.close();
-  await writeTrustBaseline(path.join(projectRoot, ".warden", "warden.lock.json"), createTrustBaseline(target.name, tools));
-  const config = wardenConfigSchema.parse({
+  await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools));
+  const config = toolbastionConfigSchema.parse({
     version: 1,
-    mode: "enforce",
+    mode: "interactive",
     project_root: projectRoot,
     target: { ...target, env_allowlist: [] },
     paths: { allow: ["./src/**"], deny: ["**/.env", "**/.ssh/**", "**/.aws/**"] },
     network: { default: "deny", allow_domains: ["api.github.com"] },
+    judge: { enabled: false, mode: "offline" },
     tools: { default: "judge", rules: {
       read_project_file: { base_risk: "low", action: "allow_when_in_scope" },
       get_execution_count: { base_risk: "low", action: "allow" },
-      emit_output: { base_risk: "low", action: "allow" }
+      emit_output: { base_risk: "low", action: "allow" },
+      emit_tool_list_change: { base_risk: "low", action: "allow" }
     } }
   });
   const serializable = { ...config, target: { ...config.target, env_allowlist: config.target.envAllowlist } };
   await writeFile(configPath, stringify(serializable));
   transport = new StdioClientTransport({ command: process.execPath, args: [path.join(root, "apps/cli/dist/index.js"), "run", "--config", configPath], cwd: root, stderr: "pipe" });
-  client = new Client({ name: "enforcement-test", version: "0.1.0" });
+  client = new Client({ name: "enforcement-test", version: "0.1.0" }, { capabilities: { elicitation: { form: {} } } });
+  client.setRequestHandler(ElicitRequestSchema, () => {
+    approvalRequests += 1;
+    return { action: "accept", content: { decision: approvalDecision } };
+  });
+  client.setNotificationHandler(ToolListChangedNotificationSchema, () => { resolveToolListChanged?.(); });
   await client.connect(transport);
 });
 
@@ -81,10 +93,34 @@ describe("enforce mode", () => {
   it("redacts credentials and quarantines injected output before forwarding", async () => {
     const secret = await client.callTool({ name: "emit_output", arguments: { kind: "secret" } });
     expect(JSON.stringify(secret.content)).toContain("[REDACTED:");
-    expect(JSON.stringify(secret.content)).not.toContain("WARDEN_TEST_SECRET_NOT_REAL_123456");
+    expect(JSON.stringify(secret.content)).not.toContain("TOOLBASTION_TEST_SECRET_NOT_REAL_123456");
     const injection = await client.callTool({ name: "emit_output", arguments: { kind: "injection" } });
     expect(injection.isError).toBe(true);
     expect(JSON.stringify(injection.content)).toContain("QUARANTINE");
     expect(JSON.stringify(injection.content)).not.toContain("Ignore previous instructions");
+  });
+
+  it("revalidates trust and relays target tool-list change notifications", async () => {
+    const result = await client.callTool({ name: "emit_tool_list_change", arguments: {} });
+    expect(result.isError).not.toBe(true);
+    await Promise.race([
+      toolListChanged,
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("tool-list change notification was not relayed")), 2_000))
+    ]);
+  });
+
+  it("uses MCP-native approve-once semantics for ambiguous calls", async () => {
+    const before = approvalRequests;
+    const first = await client.callTool({ name: "fetch_url", arguments: { url: "https://api.github.com/repos" } });
+    const second = await client.callTool({ name: "fetch_url", arguments: { url: "https://api.github.com/repos" } });
+    expect(first.isError).not.toBe(true);
+    expect(second.isError).not.toBe(true);
+    expect(approvalRequests).toBe(before + 2);
+
+    approvalDecision = "deny";
+    const denied = await client.callTool({ name: "fetch_url", arguments: { url: "https://api.github.com/issues" } });
+    expect(denied.isError).toBe(true);
+    expect(JSON.stringify(denied.content)).toContain("user_approval_declined");
+    approvalDecision = "approve_once";
   });
 });

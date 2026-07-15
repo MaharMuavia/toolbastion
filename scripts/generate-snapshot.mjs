@@ -2,8 +2,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { canonicalJson, sha256 } from "@mcp-warden/shared";
-import { generateSessionReport, renderMarkdownReport } from "@mcp-warden/reports";
+import { canonicalJson, sha256 } from "@toolbastion/shared";
+import { generateSessionReport, renderMarkdownReport } from "@toolbastion/reports";
 
 const root = process.cwd();
 const session = JSON.parse(await readFile(path.join(root, "fixtures", "dashboard-snapshot", "session.json"), "utf8"));

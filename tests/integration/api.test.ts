@@ -1,9 +1,10 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApi } from "../../apps/api/src/index.js";
 
 const root = path.resolve(".");
-const app = await createApi({ rootDir: root, configPath: path.join(root, "warden.config.example.yaml"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
+const app = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath: path.join(root, ".test-tmp", "missing-runtime-events.jsonl"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
 
 beforeAll(async () => app.ready());
 afterAll(async () => app.close());
@@ -21,7 +22,7 @@ describe("dashboard API", () => {
   it("serves the production dashboard from the localhost API", async () => {
     const response = await app.inject({ method: "GET", url: "/" });
     expect(response.statusCode).toBe(200);
-    expect(response.body).toContain("MCP Warden Security Console");
+    expect(response.body).toContain("ToolBastion Security Console");
   });
 
   it("validates policy YAML without writing it", async () => {
@@ -48,6 +49,35 @@ describe("dashboard API", () => {
       expect(download.statusCode).toBe(200);
       expect(download.headers["content-disposition"]).toContain("attachment");
       expect(download.body.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("switches to a redacted live lifecycle session when a runtime log is present", async () => {
+    const directory = path.join(root, ".test-tmp", "api-live-events");
+    const eventLogPath = path.join(directory, "runtime-events.jsonl");
+    await mkdir(directory, { recursive: true });
+    const timestamp = new Date().toISOString();
+    const lifecycle = [
+      { eventId: "live-1", timestamp, eventType: "session_started", payload: { sessionId: "live-session-1" } },
+      { eventId: "live-2", timestamp, eventType: "target_connected", payload: { targetName: "live-target" } },
+      { eventId: "live-3", timestamp, eventType: "call_blocked", payload: { toolName: "read_file", reason: "deterministic_block", riskLevel: "critical" } }
+    ];
+    await writeFile(eventLogPath, `${lifecycle.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+    const liveApp = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath });
+    try {
+      await liveApp.ready();
+      const sessions = (await liveApp.inject({ method: "GET", url: "/api/sessions" })).json<Array<{ sessionId: string; label: string }>>();
+      expect(sessions[0]).toMatchObject({ sessionId: "live-session-1", label: "LIVE LOCAL SESSION" });
+      const detail = (await liveApp.inject({ method: "GET", url: "/api/sessions/live-session-1" })).json<{ targetName: string; metrics: { blocks: number } }>();
+      expect(detail.targetName).toBe("live-target");
+      expect(detail.metrics.blocks).toBe(1);
+      const closed = [...lifecycle, { eventId: "live-4", timestamp: new Date().toISOString(), eventType: "target_closed", payload: { targetName: "live-target" } }];
+      await writeFile(eventLogPath, `${closed.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+      const fallback = (await liveApp.inject({ method: "GET", url: "/api/sessions" })).json<Array<{ label: string }>>();
+      expect(fallback[0]?.label).toBe("OFFLINE FIXTURE REPLAY");
+    } finally {
+      await liveApp.close();
+      await rm(directory, { recursive: true, force: true });
     }
   });
 });

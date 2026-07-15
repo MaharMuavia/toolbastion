@@ -3,7 +3,7 @@
 | Requirement | Status | Evidence | Remaining action |
 | --- | --- | --- | --- |
 | Working MCP security proxy | Complete | `packages/core`, forwarding/enforcement integration tests | None |
-| Deterministic policy engine | Complete | `packages/policy`, `packages/detectors`, 35-case corpus | None |
+| Deterministic policy engine | Complete | `packages/policy`, `packages/detectors`, 40-case corpus | None |
 | GPT-5.6 integration | Implemented; live acceptance deferred | `packages/judge`, `scripts/judge-smoke.mjs` | Activate project billing and rerun live smoke |
 | Codex integration | Complete except feedback ID | `packages/remediation`, schema, real `codex exec` smoke | Run `/feedback` in primary task |
 | CLI | Complete for v1 | `apps/cli`, README command reference | None |
@@ -16,12 +16,12 @@
 | Codex/human decision record | Complete | `docs/codex-collaboration.md`, `docs/human-decisions.md`, `DECISIONS.md` | Add feedback ID |
 | Screenshots | Complete | `docs/screenshots` from real Playwright session | Final privacy inspection before upload |
 | Permissive license | Complete | `LICENSE`, Apache-2.0 package metadata | None |
-| Prebuilt judge artifact | Locally verified; publication pending | Dockerfile, judge compose, release workflow | Push final tag and verify GHCR pull |
-| Hosted read-only dashboard | Workflow ready; not deployed | `.github/workflows/pages.yml` | Configure remote/Pages and verify public URL |
-| Submission description | Complete with honest pending links | `docs/submission-description.md` | Insert verified public URLs |
+| Prebuilt judge artifact | Locally verified; publication pending | Dockerfile, judge compose, release workflow | Verify final GHCR pull after tag workflow |
+| Hosted read-only dashboard | Publication target configured | `.github/workflows/pages.yml` | Verify public URL after push |
+| Submission description | Complete with publication targets | `docs/submission-description.md` | Verify generated URLs |
 | Public video under 3 minutes | Script/preparation complete | `docs/demo-script.md` | Owner records, uploads, and verifies URL |
-| Repository visibility | Not externally configured | `docs/deployment.md`; no Git remote currently | Owner creates/publicizes repository after history scan |
-| GitHub Release | Workflow ready; not published | `.github/workflows/release.yml` | Push final tag after remote CI passes |
+| Repository visibility | Publication authorized | `https://github.com/MaharMuavia/toolbastion` | Verify unauthenticated clone after push |
+| GitHub Release | Workflow ready | `.github/workflows/release.yml` | Verify assets and checksums after tag workflow |
 | `/feedback` Codex Session ID | Not recorded | `docs/feedback-session.md` | Human must run `/feedback` and copy returned ID |
 
 ## Final secret/publication gate

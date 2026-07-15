@@ -12,21 +12,21 @@ afterEach(async () => {
 });
 
 describe("MCP stdio bridge", () => {
-  it("discovers and forwards a safe tool call through Warden", async () => {
+  it("discovers and forwards a safe tool call through ToolBastion", async () => {
     transport = new StdioClientTransport({
       command: process.execPath,
-      args: [path.join(root, "apps/cli/dist/index.js"), "run", "--config", path.join(root, "warden.config.example.yaml")],
+      args: [path.join(root, "apps/cli/dist/index.js"), "run", "--config", path.join(root, "toolbastion.config.example.yaml")],
       cwd: root,
       stderr: "pipe"
     });
-    const client = new Client({ name: "warden-integration-test", version: "0.1.0" });
+    const client = new Client({ name: "toolbastion-integration-test", version: "0.1.0" });
     await client.connect(transport);
 
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name)).toContain("echo");
 
-    const result = await client.callTool({ name: "echo", arguments: { text: "safe-through-warden" } });
-    expect(result.content).toEqual([{ type: "text", text: "safe-through-warden" }]);
+    const result = await client.callTool({ name: "echo", arguments: { text: "safe-through-toolbastion" } });
+    expect(result.content).toEqual([{ type: "text", text: "safe-through-toolbastion" }]);
   }, 15_000);
 });
 

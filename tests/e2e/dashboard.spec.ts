@@ -5,7 +5,7 @@ import { createApi } from "../../apps/api/src/index.js";
 const root = path.resolve(".");
 let app: Awaited<ReturnType<typeof createApi>>;
 test.beforeAll(async () => {
-  app = await createApi({ rootDir: root, configPath: path.join(root, "warden.config.example.yaml"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
+  app = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath: path.join(root, ".test-tmp", "missing-runtime-events.jsonl"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
   await app.listen({ host: "127.0.0.1", port: 4782 });
 });
 test.afterAll(async () => app.close());
@@ -28,7 +28,7 @@ test("critical dashboard routes, Attack Lab, and report download work", async ({
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("link", { name: /Markdown report/ }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/warden-.*\.md/);
+  expect(download.suggestedFilename()).toMatch(/toolbastion-.*\.md/);
 });
 
 test("static dashboard fallback is clearly read-only", async ({ page }) => {

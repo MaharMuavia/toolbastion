@@ -1,6 +1,6 @@
 import path from "node:path";
 import process from "node:process";
-import { verifyAuditFile } from "@mcp-warden/audit";
+import { verifyAuditFile } from "@toolbastion/audit";
 
 const file = path.resolve("apps", "dashboard", "public", "snapshot", "audit.jsonl");
 const result = await verifyAuditFile(file);

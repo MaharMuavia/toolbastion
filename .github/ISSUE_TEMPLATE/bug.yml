@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible ToolBastion defect that is not a security vulnerability.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: For policy bypasses or secret exposure, stop and use private vulnerability reporting from SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Proxy, Policy and detectors, Judge, Output firewall, Audit, CLI, Dashboard, Container, Documentation]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic data only and include the exact command and observed output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, private audit events, and personal data.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

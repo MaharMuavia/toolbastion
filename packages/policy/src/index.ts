@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { inspectArguments, highestRisk } from "@mcp-warden/detectors";
+import { inspectArguments, highestRisk } from "@toolbastion/detectors";
 import {
   canonicalJson,
   deterministicResultSchema,
@@ -8,11 +8,11 @@ import {
   type DeterministicResult,
   type RequestDecision,
   type RuntimeMode,
-  type WardenConfig
-} from "@mcp-warden/shared";
+  type ToolBastionConfig
+} from "@toolbastion/shared";
 import { z } from "zod";
 
-export async function evaluateDeterministic(toolName: string, args: Record<string, unknown>, config: WardenConfig): Promise<DeterministicResult> {
+export async function evaluateDeterministic(toolName: string, args: Record<string, unknown>, config: ToolBastionConfig): Promise<DeterministicResult> {
   const findings = await inspectArguments(toolName, args, config);
   const rule = config.tools.rules[toolName];
   const action = rule?.action ?? config.tools.default;
@@ -78,7 +78,7 @@ const baselineToolSchema = z.object({
 export const trustBaselineSchema = z.object({
   version: z.literal(1),
   targetName: z.string(),
-  wardenVersion: z.string(),
+  toolbastionVersion: z.string(),
   createdAt: z.string(),
   tools: z.array(baselineToolSchema),
   baselineHash: z.string()
@@ -103,7 +103,7 @@ export function createTrustBaseline(targetName: string, tools: ListedTool[], now
       riskClassification: metadataPoisoned(description) ? "critical" : "unclassified"
     };
   }).sort((left, right) => left.name.localeCompare(right.name));
-  const unsigned = { version: 1 as const, targetName, wardenVersion: "0.1.0", createdAt: now.toISOString(), tools: normalizedTools };
+  const unsigned = { version: 1 as const, targetName, toolbastionVersion: "0.1.0", createdAt: now.toISOString(), tools: normalizedTools };
   return { ...unsigned, baselineHash: sha256(unsigned) };
 }
 

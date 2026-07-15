@@ -1,5 +1,5 @@
 {
-  "name": "@mcp-warden/detectors",
+  "name": "@toolbastion/detectors",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "build": "tsup ./src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@mcp-warden/shared": "0.1.0"
+    "@toolbastion/shared": "0.1.0"
   }
 }
 

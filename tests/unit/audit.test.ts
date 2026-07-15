@@ -2,13 +2,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuditLog, verifyAuditFile } from "@mcp-warden/audit";
+import { AuditLog, verifyAuditFile } from "@toolbastion/audit";
 
 const files: string[] = [];
 afterEach(async () => { for (const file of files.splice(0)) await writeFile(file, "", "utf8").catch(() => undefined); });
 
 async function fixture() {
-  const directory = path.join(os.tmpdir(), `warden-audit-${crypto.randomUUID()}`);
+  const directory = path.join(os.tmpdir(), `toolbastion-audit-${crypto.randomUUID()}`);
   const log = new AuditLog(directory, "test-session");
   await log.append("request", { tool: "read_file", authorization: "Bearer should-never-appear" });
   await log.append("decision", { decision: "ALLOW" });

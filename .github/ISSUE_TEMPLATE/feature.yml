@@ -1,0 +1,32 @@
+name: Feature proposal
+description: Propose a focused improvement with an explicit security trade-off.
+title: "[Proposal]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user
+      description: What security or developer problem exists, and who experiences it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and failure behavior
+      description: Explain trust boundaries, likely abuse, and whether failures should close or open the gate.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Acceptance evidence
+      description: Describe the tests, fixtures, or measurements that would prove this works.
+    validations:
+      required: true

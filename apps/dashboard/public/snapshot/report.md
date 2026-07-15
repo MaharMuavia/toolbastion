@@ -1,4 +1,4 @@
-# MCP Warden session report
+# ToolBastion session report
 
 - Session: `offline-day3-demo`
 - Source integrity: verified tamper-evident hash chain
