@@ -1,5 +1,21 @@
 # Engineering decisions
 
+## 2026-07-15 — Publication states remain explicit
+
+- Decision: Prepare Pages, GHCR, Release, video, repository, and feedback handoffs but keep their links marked pending until each external destination is actually verified.
+- Alternatives: insert guessed URLs; treat workflow configuration as a successful deployment.
+- Why: submission evidence must be accurate and account-level publication requires owner authorization and valid GitHub access.
+- Trade-off: the local release can be complete while the submission checklist still shows external actions.
+- Source: Codex implementation following the human requirement against fake success states.
+
+## 2026-07-15 — Relative static snapshot paths
+
+- Decision: Build the dashboard with a relative Vite base and resolve committed snapshot assets against `document.baseURI`.
+- Alternatives: assume domain-root hosting; add a runtime server to the hosted judge view.
+- Why: the same credential-free artifact must work at localhost root and a GitHub Pages project subpath.
+- Trade-off: the hosted build is intentionally read-only; live `/api` routes exist only in the local API/container path.
+- Source: proposed by Codex for the Day 6 hosted-snapshot gate.
+
 ## 2026-07-15 — Honest offline evaluation and reproducible judge artifact
 
 - Decision: Evaluate 35 deterministic fixtures without network calls, publish explicit limitations, ship a read-only snapshot, and package the same build as a non-root read-only container.

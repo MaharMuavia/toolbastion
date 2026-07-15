@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 output/playwright/
+.playwright-cli/
 .test-tmp/
 .env
 .env.*

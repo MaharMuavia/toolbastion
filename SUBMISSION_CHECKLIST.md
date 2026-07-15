@@ -2,17 +2,34 @@
 
 | Requirement | Status | Evidence | Remaining action |
 | --- | --- | --- | --- |
-| Working MCP security proxy | Complete for v1 scope | `packages/core/src/index.ts`, `tests/integration/stdio-forwarding.test.ts`, `tests/integration/enforcement.test.ts` | Final documentation |
-| Deterministic policy engine | Complete | `packages/policy`, `packages/detectors`, `fixtures/evaluation/day5-corpus.json` | Final documentation |
-| GPT-5.6 integration | Blocked on account activation | `packages/judge`, `scripts/judge-smoke.mjs` | Rerun live acceptance after billing activation |
-| Codex integration | Complete except feedback ID | `packages/remediation`, `schemas/remediation.schema.json`, `scripts/remediation-smoke.mjs` | Add `/feedback` ID |
-| CLI | In progress | `apps/cli/src/index.ts` | Add init/demo/replay polish on Day 6 |
-| API and React dashboard | Complete | `apps/api`, `apps/dashboard`, `tests/e2e/dashboard.spec.ts` | Final visual polish only |
-| Vulnerable demo and fixtures | Complete | `examples/vulnerable-server`, `fixtures/attacks`, `fixtures/evaluation` | None for RC |
-| Automated tests | Complete for RC | `tests/unit`, `tests/integration`, `tests/e2e` | Maintain gates |
-| Offline keyless demo | Complete | `npm run demo:offline`, `fixtures/dashboard-snapshot`, `scripts/evaluate.mjs` | None for RC |
-| Documentation and threat model | In progress | project records, `docs/judge-guide.md`, `docs/supported-platforms.md` | Day 6 polish |
-| Permissive license | Not started | — | Add Apache-2.0 license on Day 6 |
-| Prebuilt judge artifact | Ready to publish | `Dockerfile`, `docker-compose.judge.yml`, `.github/workflows/release.yml` | Push tag to publish GHCR image/release |
-| Public video under 3 minutes | Not started | URL: pending | Record after final demo |
-| `/feedback` Codex Session ID | Blocked on human action | ID: pending | Run `/feedback` in primary task and record ID |
+| Working MCP security proxy | Complete | `packages/core`, forwarding/enforcement integration tests | None |
+| Deterministic policy engine | Complete | `packages/policy`, `packages/detectors`, 35-case corpus | None |
+| GPT-5.6 integration | Implemented; live acceptance deferred | `packages/judge`, `scripts/judge-smoke.mjs` | Activate project billing and rerun live smoke |
+| Codex integration | Complete except feedback ID | `packages/remediation`, schema, real `codex exec` smoke | Run `/feedback` in primary task |
+| CLI | Complete for v1 | `apps/cli`, README command reference | None |
+| API and React dashboard | Complete | API integration tests, Playwright tests, screenshots | None |
+| Vulnerable demo and fixtures | Complete | `examples/vulnerable-server`, attack/benign/evaluation fixtures | None |
+| Automated tests | Complete for local release | unit, integration, E2E, process cleanup, error handling | Rerun in hosted CI after push |
+| Offline keyless demo | Complete | `npm run demo:offline`, read-only snapshot/container | None |
+| Audit integrity | Complete | `npm run verify:snapshot`, CLI `audit verify` | None |
+| Documentation and threat model | Complete | README, architecture, evaluation, security assumptions | None |
+| Codex/human decision record | Complete | `docs/codex-collaboration.md`, `docs/human-decisions.md`, `DECISIONS.md` | Add feedback ID |
+| Screenshots | Complete | `docs/screenshots` from real Playwright session | Final privacy inspection before upload |
+| Permissive license | Complete | `LICENSE`, Apache-2.0 package metadata | None |
+| Prebuilt judge artifact | Locally verified; publication pending | Dockerfile, judge compose, release workflow | Push final tag and verify GHCR pull |
+| Hosted read-only dashboard | Workflow ready; not deployed | `.github/workflows/pages.yml` | Configure remote/Pages and verify public URL |
+| Submission description | Complete with honest pending links | `docs/submission-description.md` | Insert verified public URLs |
+| Public video under 3 minutes | Script/preparation complete | `docs/demo-script.md` | Owner records, uploads, and verifies URL |
+| Repository visibility | Not externally configured | `docs/deployment.md`; no Git remote currently | Owner creates/publicizes repository after history scan |
+| GitHub Release | Workflow ready; not published | `.github/workflows/release.yml` | Push final tag after remote CI passes |
+| `/feedback` Codex Session ID | Not recorded | `docs/feedback-session.md` | Human must run `/feedback` and copy returned ID |
+
+## Final secret/publication gate
+
+- [ ] Inspect full Git history, screenshots, Actions settings, and release assets for secrets.
+- [ ] Confirm repository visibility is public and clone works without authentication.
+- [ ] Confirm Pages URL in a private browser window.
+- [ ] Pull the GHCR image on a clean machine and run the keyless judge compose path.
+- [ ] Verify SHA256SUMS for the GitHub Release archive.
+- [ ] Confirm YouTube runtime is below three minutes and no private notifications appear.
+- [ ] Record the exact `/feedback` Session ID in README, description, checklist, and feedback record.

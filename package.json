@@ -2,6 +2,7 @@
   "name": "mcp-warden",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -23,7 +24,8 @@
     "test:e2e": "playwright test",
     "demo:offline": "vitest run tests/integration/enforcement.test.ts --reporter=verbose",
     "evaluate": "node ./scripts/evaluate.mjs",
-    "snapshot": "node ./scripts/generate-snapshot.mjs"
+    "snapshot": "node ./scripts/generate-snapshot.mjs",
+    "verify:snapshot": "node ./scripts/verify-snapshot.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.31.0",

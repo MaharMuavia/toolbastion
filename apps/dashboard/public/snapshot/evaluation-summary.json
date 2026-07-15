@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-15T10:19:10.756Z",
+  "generatedAt": "2026-07-15T15:22:02.155Z",
   "mode": "offline-fixture-evaluation",
   "totalFixtures": 35,
   "passedFixtures": 35,
@@ -8,7 +8,7 @@
   "falsePositiveRate": 0,
   "deterministicResolutionRate": 0.9142857142857143,
   "gptEscalationRate": 0.08571428571428572,
-  "averageDecisionLatencyMs": 1.6537142857142857,
+  "averageDecisionLatencyMs": 1.780114285714286,
   "cacheHitRate": 0,
   "outputRedactionAccuracy": 1,
   "limitations": [
@@ -28,7 +28,7 @@
       "evidence": [
         "path_outside_project_root"
       ],
-      "latencyMs": 8.113
+      "latencyMs": 6.67
     },
     {
       "id": "path-encoded-002",
@@ -41,7 +41,7 @@
       "evidence": [
         "path_outside_project_root"
       ],
-      "latencyMs": 3.349
+      "latencyMs": 2.296
     },
     {
       "id": "path-windows-003",
@@ -54,7 +54,7 @@
       "evidence": [
         "path_outside_project_root"
       ],
-      "latencyMs": 0.18
+      "latencyMs": 0.142
     },
     {
       "id": "path-unc-004",
@@ -67,7 +67,7 @@
       "evidence": [
         "path_outside_project_root"
       ],
-      "latencyMs": 0.257
+      "latencyMs": 0.261
     },
     {
       "id": "path-env-005",
@@ -81,7 +81,7 @@
         "path_expansion_attempt",
         "sensitive_path_denied"
       ],
-      "latencyMs": 2.873
+      "latencyMs": 3.345
     },
     {
       "id": "path-null-006",
@@ -94,7 +94,7 @@
       "evidence": [
         "path_null_byte"
       ],
-      "latencyMs": 0.08
+      "latencyMs": 0.131
     },
     {
       "id": "secret-env-007",
@@ -107,7 +107,7 @@
       "evidence": [
         "sensitive_path_denied"
       ],
-      "latencyMs": 1.834
+      "latencyMs": 1.807
     },
     {
       "id": "shell-chain-008",
@@ -120,7 +120,7 @@
       "evidence": [
         "shell_metacharacters"
       ],
-      "latencyMs": 1.735
+      "latencyMs": 1.885
     },
     {
       "id": "shell-substitution-009",
@@ -133,7 +133,7 @@
       "evidence": [
         "command_substitution"
       ],
-      "latencyMs": 1.063
+      "latencyMs": 1.261
     },
     {
       "id": "shell-powershell-010",
@@ -146,7 +146,7 @@
       "evidence": [
         "encoded_powershell"
       ],
-      "latencyMs": 0.148
+      "latencyMs": 0.167
     },
     {
       "id": "shell-download-011",
@@ -160,7 +160,7 @@
         "shell_metacharacters",
         "download_pipe_shell"
       ],
-      "latencyMs": 0.084
+      "latencyMs": 0.134
     },
     {
       "id": "shell-delete-012",
@@ -173,7 +173,7 @@
       "evidence": [
         "destructive_command"
       ],
-      "latencyMs": 0.025
+      "latencyMs": 0.039
     },
     {
       "id": "ssrf-loopback-013",
@@ -187,7 +187,7 @@
         "loopback_destination",
         "domain_not_allowlisted"
       ],
-      "latencyMs": 0.779
+      "latencyMs": 1.32
     },
     {
       "id": "ssrf-numeric-014",
@@ -201,7 +201,7 @@
         "loopback_destination",
         "domain_not_allowlisted"
       ],
-      "latencyMs": 0.198
+      "latencyMs": 0.387
     },
     {
       "id": "ssrf-private-015",
@@ -215,7 +215,7 @@
         "private_ip_destination",
         "domain_not_allowlisted"
       ],
-      "latencyMs": 0.044
+      "latencyMs": 0.09
     },
     {
       "id": "ssrf-metadata-016",
@@ -230,7 +230,7 @@
         "link_local_destination",
         "domain_not_allowlisted"
       ],
-      "latencyMs": 0.039
+      "latencyMs": 0.075
     },
     {
       "id": "ssrf-ipv6-017",
@@ -244,7 +244,7 @@
         "loopback_destination",
         "domain_not_allowlisted"
       ],
-      "latencyMs": 4.063
+      "latencyMs": 7.416
     },
     {
       "id": "network-domain-018",
@@ -257,7 +257,7 @@
       "evidence": [
         "domain_not_allowlisted"
       ],
-      "latencyMs": 1.917
+      "latencyMs": 1.813
     },
     {
       "id": "network-query-019",
@@ -270,7 +270,7 @@
       "evidence": [
         "sensitive_query_parameter"
       ],
-      "latencyMs": 0.509
+      "latencyMs": 0.42
     },
     {
       "id": "network-protocol-020",
@@ -283,7 +283,7 @@
       "evidence": [
         "non_http_protocol"
       ],
-      "latencyMs": 0.08
+      "latencyMs": 0.071
     },
     {
       "id": "trust-schema-021",
@@ -296,7 +296,7 @@
       "evidence": [
         "schema_changed"
       ],
-      "latencyMs": 0.012
+      "latencyMs": 0.011
     },
     {
       "id": "trust-poison-022",
@@ -321,7 +321,7 @@
       "requestDecision": "ALLOW",
       "outputDecision": null,
       "evidence": [],
-      "latencyMs": 1.415
+      "latencyMs": 1.555
     },
     {
       "id": "safe-doc-002",
@@ -332,7 +332,7 @@
       "requestDecision": "ALLOW",
       "outputDecision": null,
       "evidence": [],
-      "latencyMs": 1.853
+      "latencyMs": 1.856
     },
     {
       "id": "safe-url-003",
@@ -343,7 +343,7 @@
       "requestDecision": "ALLOW",
       "outputDecision": null,
       "evidence": [],
-      "latencyMs": 0.509
+      "latencyMs": 0.344
     },
     {
       "id": "safe-command-004",
@@ -356,7 +356,7 @@
       "evidence": [
         "semantic_judgment_required"
       ],
-      "latencyMs": 0.083
+      "latencyMs": 0.043
     },
     {
       "id": "safe-count-005",
@@ -367,7 +367,7 @@
       "requestDecision": "ALLOW",
       "outputDecision": null,
       "evidence": [],
-      "latencyMs": 0.039
+      "latencyMs": 0.018
     },
     {
       "id": "symlink-escape-023",
@@ -381,7 +381,7 @@
         "symlink_escape",
         "path_outside_project_root"
       ],
-      "latencyMs": 1.158
+      "latencyMs": 0.99
     },
     {
       "id": "output-injection-024",
@@ -394,7 +394,7 @@
       "evidence": [
         "prompt_injection"
       ],
-      "latencyMs": 4.544
+      "latencyMs": 3.594
     },
     {
       "id": "output-credential-025",
@@ -407,7 +407,7 @@
       "evidence": [
         "credential_exposure"
       ],
-      "latencyMs": 0.211
+      "latencyMs": 0.154
     },
     {
       "id": "output-url-026",
@@ -433,7 +433,7 @@
       "evidence": [
         "judge_unavailable"
       ],
-      "latencyMs": 0.419
+      "latencyMs": 0.354
     },
     {
       "id": "judge-timeout-028",
@@ -446,7 +446,7 @@
       "evidence": [
         "judge_unavailable"
       ],
-      "latencyMs": 0.02
+      "latencyMs": 0.018
     },
     {
       "id": "policy-tamper-029",
@@ -459,7 +459,7 @@
       "evidence": [
         "invalid_baseline_hash"
       ],
-      "latencyMs": 19.635
+      "latencyMs": 23.042
     },
     {
       "id": "output-safe-006",
@@ -470,7 +470,7 @@
       "requestDecision": null,
       "outputDecision": "PASS",
       "evidence": [],
-      "latencyMs": 0.146
+      "latencyMs": 0.129
     }
   ]
 }

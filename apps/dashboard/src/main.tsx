@@ -28,6 +28,10 @@ type PolicyDetail = { yaml: string; valid: boolean; mode: string };
 type Scenario = { id: string; title: string; category: string; expected: string; actual?: string; summary: string };
 type ScenarioResult = { scenarioId: string; expected: string; actual: string; matched: boolean; summary: string };
 
+function snapshotUrl(file: string): string {
+  return new URL(`snapshot/${file}`, document.baseURI).toString();
+}
+
 function Metric({ label, value, note }: { label: string; value: string | number; note: string }) {
   return <article className="metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></article>;
 }
@@ -50,7 +54,7 @@ function App() {
         setSession(value); setSelected(value.events.at(-1) ?? null);
       } catch {
         try {
-          const response = await fetch("/snapshot/session.json");
+          const response = await fetch(snapshotUrl("session.json"));
           if (!response.ok) throw new Error("Recorded snapshot unavailable");
           const value = await response.json() as Session;
           const decisions = value.events.filter((event) => event.decision);
@@ -64,7 +68,7 @@ function App() {
   useEffect(() => { fetch("/api/policy").then((response) => response.ok ? response.json() as Promise<PolicyDetail> : null).then(setPolicy).catch(() => setPolicy(null)); }, []);
   useEffect(() => {
     fetch("/api/demo/scenarios").then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<Scenario[]>; }).then(setScenarios)
-      .catch(() => { fetch("/snapshot/scenarios.json").then((response) => response.json() as Promise<Scenario[]>).then(setScenarios).catch(() => setScenarios([])); });
+      .catch(() => { fetch(snapshotUrl("scenarios.json")).then((response) => response.json() as Promise<Scenario[]>).then(setScenarios).catch(() => setScenarios([])); });
   }, []);
   const latestCritical = useMemo<Event | undefined>(() => session?.events.filter((event) => event.riskLevel === "critical").at(-1), [session]);
 
@@ -119,10 +123,10 @@ function App() {
         <div className="policy-body"><div><label>Runtime mode<strong>{policy?.mode ?? session.mode}</strong></label><label>Output firewall<strong>Secrets redacted · injections quarantined</strong></label><label>Audit storage<strong>Redacted JSONL · SHA-256 hash chain</strong></label><label>Remediation<strong>Read-only proposal · explicit apply</strong></label></div><pre>{policy?.yaml ?? "Policy source is not exposed in this fixture-only view."}</pre></div>
       </section>
       <section className="downloads panel" id="reports"><div className="panel-head"><div><p className="eyebrow">VERIFIED ARTIFACTS</p><h2>Download reports</h2></div></div><div>{[
-        ["Markdown report", readOnly ? "/snapshot/report.md" : `/api/sessions/${session.sessionId}/report?format=markdown`],
-        ["JSON report", readOnly ? "/snapshot/report.json" : `/api/sessions/${session.sessionId}/report?format=json`],
-        ["Redacted audit JSONL", readOnly ? "/snapshot/audit.jsonl" : `/api/sessions/${session.sessionId}/audit`],
-        ["Evaluation summary", readOnly ? "/snapshot/evaluation-summary.json" : "/api/evaluation"]
+        ["Markdown report", readOnly ? snapshotUrl("report.md") : `/api/sessions/${session.sessionId}/report?format=markdown`],
+        ["JSON report", readOnly ? snapshotUrl("report.json") : `/api/sessions/${session.sessionId}/report?format=json`],
+        ["Redacted audit JSONL", readOnly ? snapshotUrl("audit.jsonl") : `/api/sessions/${session.sessionId}/audit`],
+        ["Evaluation summary", readOnly ? snapshotUrl("evaluation-summary.json") : "/api/evaluation"]
       ].map(([label, href]) => <a key={label} href={href} download>{label}<span>↓</span></a>)}</div></section>
       <footer><span>MCP Warden v0.1.0</span><span>Dashboard is outside the enforcement path</span></footer>
     </main>

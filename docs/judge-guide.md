@@ -34,3 +34,13 @@ In PowerShell, set `$env:WARDEN_IMAGE="mcp-warden:0.1.0-rc.1"` and `$env:WARDEN_
 - This artifact demonstrates deterministic and recorded semantic behavior; it does not claim to run a live MCP target.
 
 Live GPT-5.6 mode is optional and should be run from a source checkout with the user's own active project credential. Never bake credentials into an image.
+
+## Verify the recorded audit chain
+
+From a source or release checkout after the build:
+
+```powershell
+npm.cmd run verify:snapshot
+```
+
+The command exits nonzero if sequence, previous-hash linkage, event hash, or parsed event validation fails. The hash chain is tamper-evident, not a digital signature or externally anchored attestation.
