@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.warden/audit/
+.warden/cache/
+.warden/tmp/
+reports/*
+!reports/.gitkeep
+

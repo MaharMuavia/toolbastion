@@ -1,0 +1,10 @@
+version: 1
+mode: shadow
+target:
+  name: benign-demo
+  command: node
+  args:
+    - ./examples/benign-server/dist/index.js
+  cwd: ./
+  envAllowlist: []
+
