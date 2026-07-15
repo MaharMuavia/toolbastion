@@ -23,6 +23,7 @@ type Session = {
   events: Event[];
   metrics: { totalToolCalls: number; allows: number; blocks: number; askUser: number; quarantines: number; deterministicResolutionRate: number; judgeEscalationRate: number; judgeTokens: number; cacheHitRate: number };
 };
+type PolicyDetail = { yaml: string; valid: boolean; mode: string };
 
 function Metric({ label, value, note }: { label: string; value: string | number; note: string }) {
   return <article className="metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></article>;
@@ -32,12 +33,14 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [selected, setSelected] = useState<Event | null>(null);
   const [error, setError] = useState("");
+  const [policy, setPolicy] = useState<PolicyDetail | null>(null);
   useEffect(() => {
     fetch("/api/sessions/offline-day3-demo")
       .then(async (response) => { if (!response.ok) throw new Error("Dashboard API unavailable"); return response.json() as Promise<Session>; })
       .then((value) => { setSession(value); setSelected(value.events.at(-1) ?? null); })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to load session"));
   }, []);
+  useEffect(() => { fetch("/api/policy").then((response) => response.ok ? response.json() as Promise<PolicyDetail> : null).then(setPolicy).catch(() => setPolicy(null)); }, []);
   const latestCritical = useMemo<Event | undefined>(() => session?.events.filter((event) => event.riskLevel === "critical").at(-1), [session]);
 
   if (error) return <main className="center"><section className="empty"><p className="eyebrow">CONNECTION ERROR</p><h1>Security data is unavailable</h1><p>{error}. Start the localhost API and refresh.</p></section></main>;
@@ -67,6 +70,10 @@ function App() {
         <div className="panel detail"><div className="panel-head"><div><p className="eyebrow">EVENT INSPECTOR</p><h2>{selected?.eventType ?? "Select an event"}</h2></div></div>
           {selected && <div className="detail-body"><div className="detail-grid"><label>Risk<strong className={selected.riskLevel}>{selected.riskLevel}</strong></label><label>Decision<strong>{selected.decision ?? "—"}</strong></label><label>Latency<strong>{selected.latencyMs} ms</strong></label><label>Judge tokens<strong>{selected.judgeTokens}</strong></label></div><h3>Evidence summary</h3><p>{selected.summary}</p><h3>Audit identity</h3><code>{selected.eventId}</code><div className="chain"><i></i> Recorded fixture event • raw secrets unavailable</div></div>}
         </div>
+      </section>
+      <section className="policy-panel panel" id="policy">
+        <div className="panel-head"><div><p className="eyebrow">POLICY DETAIL</p><h2>Active enforcement boundaries</h2></div><span className={`decision ${policy?.valid ? "allow" : "ask_user"}`}>{policy?.valid ? "VALID" : "UNAVAILABLE"}</span></div>
+        <div className="policy-body"><div><label>Runtime mode<strong>{policy?.mode ?? session.mode}</strong></label><label>Output firewall<strong>Secrets redacted · injections quarantined</strong></label><label>Audit storage<strong>Redacted JSONL · SHA-256 hash chain</strong></label><label>Remediation<strong>Read-only proposal · explicit apply</strong></label></div><pre>{policy?.yaml ?? "Policy source is not exposed in this fixture-only view."}</pre></div>
       </section>
       <footer><span>MCP Warden v0.1.0</span><span>Dashboard is outside the enforcement path</span></footer>
     </main>

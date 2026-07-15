@@ -10,7 +10,9 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@mcp-warden/audit": "0.1.0",
     "@mcp-warden/judge": "0.1.0",
+    "@mcp-warden/output-firewall": "0.1.0",
     "@mcp-warden/policy": "0.1.0",
     "@mcp-warden/shared": "0.1.0",
     "@modelcontextprotocol/sdk": "1.29.0",

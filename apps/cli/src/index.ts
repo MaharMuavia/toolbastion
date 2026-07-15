@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { loadEnvFile } from "node:process";
@@ -8,8 +9,11 @@ import { Command } from "commander";
 import { parse } from "yaml";
 import { ZodError } from "zod";
 import { startApi } from "@mcp-warden/api";
+import { auditFilePath, verifyAuditFile } from "@mcp-warden/audit";
 import { WardenProxy, WardenTargetClient } from "@mcp-warden/core";
 import { createTrustBaseline, diffTrustBaseline, readTrustBaseline, writeTrustBaseline } from "@mcp-warden/policy";
+import { applyProposal, readProposal, rejectProposal } from "@mcp-warden/remediation";
+import { generateSessionReport, renderMarkdownReport } from "@mcp-warden/reports";
 import { formatZodIssues, wardenConfigSchema } from "@mcp-warden/shared";
 
 const VERSION = "0.1.0";
@@ -84,6 +88,55 @@ trust.command("diff")
     const diff = diffTrustBaseline(await readTrustBaseline(trustFile(config.project_root)), tools);
     process.stdout.write(`${JSON.stringify(diff, null, 2)}\n`);
     if (diff.added.length + diff.removed.length + diff.schemaChanged.length + diff.descriptionChanged.length + diff.poisoned.length > 0) process.exitCode = 2;
+  });
+
+const audit = program.command("audit").description("verify tamper-evident session logs");
+audit.command("verify <session-id>")
+  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .action(async (sessionId: string, { config: configPath }: { config: string }) => {
+    const config = await loadConfig(configPath);
+    const file = auditFilePath(path.resolve(config.project_root, config.audit.directory), sessionId);
+    const verification = await verifyAuditFile(file);
+    process.stdout.write(`${JSON.stringify({ sessionId, file, ...verification }, null, 2)}\n`);
+    if (!verification.valid) process.exitCode = 2;
+  });
+
+program.command("report <session-id>")
+  .description("regenerate a verified report from a session audit log")
+  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("-f, --format <format>", "json or markdown", "markdown")
+  .option("-o, --output <path>", "write report to a file")
+  .action(async (sessionId: string, options: { config: string; format: string; output?: string }) => {
+    if (!new Set(["json", "markdown"]).has(options.format)) throw new Error("Report format must be json or markdown");
+    const config = await loadConfig(options.config);
+    const report = await generateSessionReport(auditFilePath(path.resolve(config.project_root, config.audit.directory), sessionId));
+    const rendered = options.format === "json" ? `${JSON.stringify(report, null, 2)}\n` : renderMarkdownReport(report);
+    if (options.output) { await writeFile(options.output, rendered, "utf8"); process.stdout.write(`WROTE ${options.output}\n`); }
+    else process.stdout.write(rendered);
+  });
+
+const remediation = program.command("remediation").description("review verified Codex policy proposals");
+function remediationDirectory(config: Awaited<ReturnType<typeof loadConfig>>): string { return path.resolve(config.project_root, config.remediation.directory); }
+remediation.command("inspect <proposal-id>")
+  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .action(async (proposalId: string, { config: configPath }: { config: string }) => {
+    const config = await loadConfig(configPath);
+    process.stdout.write(`${JSON.stringify(await readProposal(remediationDirectory(config), proposalId), null, 2)}\n`);
+  });
+remediation.command("reject <proposal-id>")
+  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .action(async (proposalId: string, { config: configPath }: { config: string }) => {
+    const config = await loadConfig(configPath);
+    process.stdout.write(`${JSON.stringify(await rejectProposal(remediationDirectory(config), proposalId), null, 2)}\n`);
+  });
+remediation.command("apply <proposal-id>")
+  .option("-c, --config <path>", "configuration file", "warden.config.example.yaml")
+  .option("--yes", "explicitly confirm applying the verified proposal", false)
+  .action(async (proposalId: string, options: { config: string; yes: boolean }) => {
+    if (!options.yes) throw new Error("Applying a policy proposal requires explicit confirmation with --yes");
+    const config = await loadConfig(options.config);
+    const proposal = await applyProposal(remediationDirectory(config), proposalId, path.resolve(options.config), os.userInfo().username);
+    process.stdout.write(`${JSON.stringify(proposal, null, 2)}\n`);
   });
 
 program.command("doctor")

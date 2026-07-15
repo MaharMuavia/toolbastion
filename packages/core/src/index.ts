@@ -5,14 +5,16 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { AuditLog } from "@mcp-warden/audit";
 import { createJudgeProvider, type JudgeProvider } from "@mcp-warden/judge";
+import { inspectToolResult } from "@mcp-warden/output-firewall";
 import { ExactCallCache, applyRuntimeMode, diffTrustBaseline, evaluateDeterministic, readTrustBaseline, type TrustDiff } from "@mcp-warden/policy";
 import { sha256, targetServerConfigSchema, type DeterministicResult, type JudgeVerdict, type RequestDecision, type TargetServerConfig, type WardenConfig } from "@mcp-warden/shared";
 
 export type LifecycleEvent = {
   eventId: string;
   timestamp: string;
-  eventType: "target_connecting" | "target_connected" | "tools_listed" | "trust_verified" | "policy_evaluated" | "call_blocked" | "tool_forwarded" | "target_closed";
+  eventType: "target_connecting" | "target_connected" | "tools_listed" | "trust_verified" | "policy_evaluated" | "call_blocked" | "tool_forwarded" | "output_inspected" | "audit_failed" | "target_closed";
   payload: Record<string, unknown>;
 };
 
@@ -77,6 +79,7 @@ export class WardenProxy {
   readonly #emit: EventSink;
   readonly #cache = new ExactCallCache<CachedDecision>();
   readonly #judge: JudgeProvider;
+  readonly #audit: AuditLog;
   readonly #recentEvents: string[] = [];
   #tools: Awaited<ReturnType<WardenTargetClient["listTools"]>>["tools"] = [];
   #untrustedTools = new Set<string>();
@@ -86,6 +89,7 @@ export class WardenProxy {
     this.#emit = emit;
     this.#target = new WardenTargetClient(config.target, emit);
     this.#judge = createJudgeProvider(config);
+    this.#audit = new AuditLog(path.resolve(config.project_root, config.audit.directory));
     this.#server = new Server({ name: "mcp-warden", version: "0.1.0" }, { capabilities: { tools: {} } });
     this.#server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: this.#visibleTools() }));
     this.#server.setRequestHandler(CallToolRequestSchema, async (request) => this.#handleCall(request.params.name, request.params.arguments ?? {}));
@@ -96,7 +100,7 @@ export class WardenProxy {
     await this.#server.connect(new StdioServerTransport());
   }
 
-  async close(): Promise<void> { await Promise.allSettled([this.#server.close(), this.#target.close()]); }
+  async close(): Promise<void> { await Promise.allSettled([this.#server.close(), this.#target.close(), this.#audit.close()]); }
 
   async #initializeTarget(): Promise<void> {
     await this.#target.connect();
@@ -118,6 +122,9 @@ export class WardenProxy {
   }
 
   async #handleCall(toolName: string, args: Record<string, unknown>) {
+    if (!await this.#appendAudit("tool_call_received", { toolName, args })) {
+      if (this.#config.mode === "enforce") return this.#auditUnavailable(toolName);
+    }
     if (this.#config.mode === "enforce" && this.#untrustedTools.has(toolName)) {
       return this.#blocked(toolName, "tool_trust_not_approved", ["Tool metadata is new or changed from the approved baseline"]);
     }
@@ -148,14 +155,44 @@ export class WardenProxy {
       if (this.#config.cache.enabled) this.#cache.set(fingerprint, cached, this.#config.cache.ttl_seconds);
     }
     this.#emitEvent("policy_evaluated", { toolName, argsHash: sha256(args), decision: cached.decision, deterministic: cached.result, judge: cached.judge, cacheHits: this.#cache.hits, cacheMisses: this.#cache.misses });
+    if (!await this.#appendAudit("policy_decision", { toolName, argsHash: sha256(args), decision: cached.decision, deterministic: cached.result, judge: cached.judge })) {
+      if (this.#config.mode === "enforce") return this.#auditUnavailable(toolName);
+    }
     if (cached.decision !== "ALLOW") return this.#blocked(toolName, cached.decision === "BLOCK" ? "deterministic_block" : "user_approval_required", cached.result.reasonCodes);
-    return this.#target.callTool(toolName, args);
+    const result = await this.#target.callTool(toolName, args);
+    if (!this.#config.outputs.inspect) return result;
+    const inspection = inspectToolResult(result, this.#config);
+    this.#emitEvent("output_inspected", { toolName, decision: inspection.decision, riskLevel: inspection.riskLevel, evidence: inspection.evidence, redactions: inspection.redactions.length, quarantineId: inspection.quarantineId });
+    if (!await this.#appendAudit("output_inspected", { toolName, decision: inspection.decision, riskLevel: inspection.riskLevel, evidence: inspection.evidence, redactions: inspection.redactions, quarantineId: inspection.quarantineId })) {
+      if (this.#config.mode === "enforce") return this.#auditUnavailable(toolName);
+    }
+    if (inspection.decision === "QUARANTINE") {
+      return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: "QUARANTINE", reason: "unsafe_tool_output", evidence: inspection.evidence.map((item) => item.category), quarantineId: inspection.quarantineId }) }] };
+    }
+    return inspection.sanitizedResult as typeof result;
   }
 
   #blocked(toolName: string, reason: string, evidence: string[]) {
     const eventId = randomUUID();
     this.#emitEvent("call_blocked", { toolName, reason, evidence, eventId });
+    void this.#appendAudit("call_blocked", { toolName, reason, evidence, eventId });
     return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: reason === "user_approval_required" ? "ASK_USER" : "BLOCK", reason, evidence, eventId }) }] };
+  }
+
+  #auditUnavailable(toolName: string) {
+    const eventId = randomUUID();
+    this.#emitEvent("call_blocked", { toolName, reason: "audit_unavailable", evidence: ["Tamper-evident audit write failed"], eventId });
+    return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: "BLOCK", reason: "audit_unavailable", evidence: ["Tamper-evident audit write failed"], eventId }) }] };
+  }
+
+  async #appendAudit(eventType: string, payload: Record<string, unknown>): Promise<boolean> {
+    try {
+      await this.#audit.append(eventType, payload);
+      return true;
+    } catch (error) {
+      this.#emitEvent("audit_failed", { eventType, error: error instanceof Error ? error.message : "audit write failed" });
+      return false;
+    }
   }
 
   #emitEvent(eventType: LifecycleEvent["eventType"], payload: Record<string, unknown>): void {

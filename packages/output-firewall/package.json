@@ -1,0 +1,10 @@
+{
+  "name": "@mcp-warden/output-firewall",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": { "build": "tsup ./src/index.ts --format esm --dts --clean" },
+  "dependencies": { "@mcp-warden/shared": "0.1.0" }
+}

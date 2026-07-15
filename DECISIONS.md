@@ -1,5 +1,21 @@
 # Engineering decisions
 
+## 2026-07-15 — Read-only Codex proposals with local verification
+
+- Decision: Invoke actual `codex exec` with ephemeral state, ignored user config/rules, read-only sandbox, disabled approvals, schema output, and stdin-delivered redacted evidence; strip `OPENAI_API_KEY` and never auto-apply.
+- Alternatives: let Codex edit policy directly; accept free-form output; reuse Warden MCP configuration.
+- Why: remediation must be useful without becoming a recursive or policy-weakening execution path.
+- Trade-off: patches require temporary application, schema validation, event reevaluation, regression checks, and explicit human apply.
+- Source: human requirement, aligned with the official Codex manual and verified against local Codex v0.136.0 help.
+
+## 2026-07-15 — Hash-chained, redacted audit source
+
+- Decision: Store canonical JSONL events with sequence, previous hash, event hash, session identity, and recursively redacted payloads.
+- Alternatives: ordinary logs; retaining raw output; calling the chain a signature.
+- Why: reports must regenerate from an integrity-checked source without persisting discovered secrets.
+- Trade-off: this is a tamper-evident chain, not a cryptographic signature or externally anchored attestation.
+- Source: human product requirement, implemented by Codex.
+
 ## 2026-07-15 — Responses API structured outputs with independent subchecks
 
 - Decision: Run scope, exfiltration, and tool-integrity checks independently with `Promise.all`, using the official OpenAI SDK Zod structured-output helper, then aggregate in TypeScript.
@@ -74,8 +90,8 @@
 
 ## 2026-07-15 — Explicit workspace build orchestrator
 
-- Decision: Build workspaces in dependency order with a small Node orchestrator that uses `shell: false` and package-local working directories.
-- Alternatives: npm's unordered `--workspaces` execution; a larger task runner.
-- Why: nested npm workspace builds on this Windows/OneDrive path caused tsup glob discovery to scan outside the repository.
-- Trade-off: new buildable workspaces must be added to one explicit list.
+- Decision: Compile server workspaces in dependency order with the TypeScript compiler from a shell-free Node orchestrator; build the dashboard with Vite.
+- Alternatives: npm's unordered `--workspaces` execution; direct tsup orchestration; a larger task runner.
+- Why: direct tsup/esbuild entry resolution intermittently scanned above this Windows/OneDrive repository, while ordered `tsc` builds are repeatable and preserve ESM package boundaries.
+- Trade-off: server packages are emitted as modules instead of bundled files, and new buildable workspaces must be added to one explicit list.
 - Source: proposed by Codex after reproducing the failure.

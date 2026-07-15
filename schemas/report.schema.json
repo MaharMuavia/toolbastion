@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["version", "sessionId", "sourceIntegrity", "generatedAt", "sourceHash", "summary", "timeline"],
+  "properties": {
+    "version": { "const": 1 },
+    "sessionId": { "type": "string" },
+    "sourceIntegrity": { "const": "verified" },
+    "generatedAt": { "type": "string" },
+    "sourceHash": { "type": "string" },
+    "summary": { "type": "object" },
+    "timeline": { "type": "array" }
+  },
+  "additionalProperties": false
+}

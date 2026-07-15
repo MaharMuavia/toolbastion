@@ -33,4 +33,7 @@ tools:
     echo:
       base_risk: low
       action: allow
-
+remediation:
+  enabled: false
+  auto_apply: false
+  run_regression_suite: true

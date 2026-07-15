@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["action", "unifiedDiff", "reasoning", "expectedOutcome"],
+  "properties": {
+    "action": { "enum": ["PATCH", "NO_CHANGE"] },
+    "unifiedDiff": { "type": ["string", "null"] },
+    "reasoning": { "type": "string", "minLength": 1 },
+    "expectedOutcome": { "enum": ["allow_legitimate_call", "keep_attack_blocked"] }
+  },
+  "additionalProperties": false
+}

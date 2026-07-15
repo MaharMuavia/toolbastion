@@ -1,36 +1,33 @@
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
 const root = process.cwd();
 const workspaces = [
-  { directory: "packages/shared", declarations: true },
-  { directory: "packages/detectors", declarations: true },
-  { directory: "packages/policy", declarations: true },
-  { directory: "packages/judge", declarations: true },
-  { directory: "packages/core", declarations: true },
-  { directory: "examples/benign-server", declarations: false },
-  { directory: "examples/vulnerable-server", declarations: false },
-  { directory: "apps/api", declarations: true },
-  { directory: "apps/cli", declarations: true }
+  "packages/shared",
+  "packages/audit",
+  "packages/output-firewall",
+  "packages/reports",
+  "packages/detectors",
+  "packages/policy",
+  "packages/remediation",
+  "packages/judge",
+  "packages/core",
+  "examples/benign-server",
+  "examples/vulnerable-server",
+  "apps/api",
+  "apps/cli"
 ];
-const tsupCli = path.join(root, "node_modules", "tsup", "dist", "cli-default.js");
+const tsc = path.join(root, "node_modules", "typescript", "bin", "tsc");
 
 for (const workspace of workspaces) {
-  const cwd = path.join(root, workspace.directory);
-  const entry = path.join(cwd, "src", "index.ts");
-  const args = [tsupCli, entry, "--format", "esm", "--clean"];
-  if (workspace.declarations) args.push("--dts");
-  const result = spawnSync(process.execPath, args, {
-    cwd,
-    env: { ...process.env, INIT_CWD: cwd },
-    shell: false,
-    stdio: "inherit"
-  });
+  rmSync(path.join(root, workspace, "dist"), { recursive: true, force: true });
+  const result = spawnSync(process.execPath, [tsc, "-p", path.join(root, workspace, "tsconfig.json"), "--pretty", "false"], { cwd: root, env: process.env, shell: false, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-const dashboard = path.join(root, "apps", "dashboard");
-const viteCli = path.join(dashboard, "node_modules", "vite", "bin", "vite.js");
-const dashboardResult = spawnSync(process.execPath, [viteCli, "build"], { cwd: dashboard, env: { ...process.env, INIT_CWD: dashboard }, shell: false, stdio: "inherit" });
-if (dashboardResult.status !== 0) process.exit(dashboardResult.status ?? 1);
+const npmCli = process.env.npm_execpath;
+if (!npmCli) throw new Error("npm_execpath is unavailable; run this build through npm");
+const dashboard = spawnSync(process.execPath, [npmCli, "run", "build", "--workspace", "@mcp-warden/dashboard"], { cwd: root, env: process.env, shell: false, stdio: "inherit" });
+if (dashboard.status !== 0) process.exit(dashboard.status ?? 1);

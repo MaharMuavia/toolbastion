@@ -52,6 +52,51 @@ export const judgeVerdictSchema = z.object({
 });
 export type JudgeVerdict = z.infer<typeof judgeVerdictSchema>;
 
+export const toolResultInspectionSchema = z.object({
+  decision: outputDecisionSchema,
+  riskLevel: riskLevelSchema,
+  evidence: z.array(detectionEvidenceSchema),
+  redactions: z.array(z.object({ fieldPath: z.string(), reason: z.string() })),
+  sanitizedResult: z.unknown(),
+  quarantineId: z.string().optional()
+});
+export type ToolResultInspection = z.infer<typeof toolResultInspectionSchema>;
+
+export const auditEventSchema = z.object({
+  sequence: z.number().int().positive(),
+  eventId: z.string(),
+  sessionId: z.string(),
+  timestamp: z.string(),
+  eventType: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+  previousHash: z.string(),
+  eventHash: z.string()
+});
+export type AuditEvent = z.infer<typeof auditEventSchema>;
+
+export const remediationOutputSchema = z.object({
+  action: z.enum(["PATCH", "NO_CHANGE"]),
+  unifiedDiff: z.string().nullable(),
+  reasoning: z.string().min(1),
+  expectedOutcome: z.enum(["allow_legitimate_call", "keep_attack_blocked"])
+}).superRefine((value, context) => {
+  if (value.action === "PATCH" && !value.unifiedDiff) context.addIssue({ code: "custom", path: ["unifiedDiff"], message: "PATCH requires a unified diff" });
+  if (value.action === "NO_CHANGE" && value.unifiedDiff !== null) context.addIssue({ code: "custom", path: ["unifiedDiff"], message: "NO_CHANGE requires null" });
+});
+export type RemediationOutput = z.infer<typeof remediationOutputSchema>;
+
+export const remediationProposalSchema = remediationOutputSchema.and(z.object({
+  proposalId: z.string(),
+  blockedEventId: z.string(),
+  verified: z.boolean(),
+  verificationResults: z.array(z.string()),
+  createdAt: z.string(),
+  status: z.enum(["pending", "applied", "rejected"]),
+  appliedBy: z.string().optional(),
+  appliedAt: z.string().optional()
+}));
+export type RemediationProposal = z.infer<typeof remediationProposalSchema>;
+
 export const targetServerConfigSchema = z.object({
   name: z.string().trim().min(1),
   command: z.string().trim().min(1),
@@ -129,6 +174,13 @@ export const wardenConfigSchema = z.object({
     redact_arguments: z.boolean().default(true),
     hash_chain: z.boolean().default(true),
     retain_raw_content: z.literal(false).default(false)
+  }).prefault({}),
+  remediation: z.object({
+    enabled: z.boolean().default(false),
+    auto_apply: z.literal(false).default(false),
+    run_regression_suite: z.boolean().default(true),
+    directory: z.string().default("./.warden/remediation"),
+    timeout_ms: z.number().int().positive().max(300_000).default(120_000)
   }).prefault({})
 });
 export type WardenConfig = z.output<typeof wardenConfigSchema>;
