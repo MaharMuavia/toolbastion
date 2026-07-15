@@ -36,4 +36,18 @@ describe("dashboard API", () => {
     expect(response.statusCode).toBe(400);
     expect(response.body).not.toContain("stack");
   });
+
+  it("runs an Attack Lab fixture and downloads all report formats", async () => {
+    const scenarios = await app.inject({ method: "GET", url: "/api/demo/scenarios" });
+    expect(scenarios.statusCode).toBe(200);
+    expect(scenarios.json<unknown[]>()).toHaveLength(12);
+    const replay = await app.inject({ method: "POST", url: "/api/demo/run", payload: { scenarioId: "path-traversal" } });
+    expect(replay.json<{ matched: boolean; actual: string }>()).toMatchObject({ matched: true, actual: "BLOCK" });
+    for (const url of ["/api/sessions/offline-day3-demo/report?format=markdown", "/api/sessions/offline-day3-demo/report?format=json", "/api/sessions/offline-day3-demo/audit", "/api/evaluation"]) {
+      const download = await app.inject({ method: "GET", url });
+      expect(download.statusCode).toBe(200);
+      expect(download.headers["content-disposition"]).toContain("attachment");
+      expect(download.body.length).toBeGreaterThan(20);
+    }
+  });
 });

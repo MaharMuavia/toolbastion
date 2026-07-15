@@ -19,7 +19,7 @@
     "@mcp-warden/reports": "0.1.0",
     "@mcp-warden/shared": "0.1.0",
     "commander": "15.0.0",
-    "yaml": "2.8.1",
+    "yaml": "2.9.0",
     "zod": "4.4.3"
   }
 }

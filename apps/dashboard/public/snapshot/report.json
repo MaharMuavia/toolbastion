@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "sessionId": "offline-day3-demo",
+  "sourceIntegrity": "verified",
+  "generatedAt": "2026-07-15T08:00:00.000Z",
+  "sourceHash": "34882adc160ecc6c53470bea36a8fc65ef1ec9c1c4ae7594e7be366a748a96da",
+  "summary": {
+    "events": 7,
+    "allowed": 2,
+    "blocked": 2,
+    "askUser": 0,
+    "redacted": 1,
+    "quarantined": 1,
+    "highestRisk": "critical"
+  },
+  "timeline": [
+    {
+      "sequence": 1,
+      "timestamp": "2026-07-15T08:00:00.000Z",
+      "eventType": "trust_verified",
+      "decision": null,
+      "riskLevel": "none",
+      "eventHash": "62251cfc52094a7a59e3fa062be1cf901e47b4cf8182b127119bbb1a4ac16de9"
+    },
+    {
+      "sequence": 2,
+      "timestamp": "2026-07-15T08:00:01.000Z",
+      "eventType": "policy_evaluated",
+      "decision": "ALLOW",
+      "riskLevel": "low",
+      "eventHash": "c2059a30f77005070a53831f10fee06b4fe2f8270cead03c7a4beb24002d9a8b"
+    },
+    {
+      "sequence": 3,
+      "timestamp": "2026-07-15T08:00:02.000Z",
+      "eventType": "call_blocked",
+      "decision": "BLOCK",
+      "riskLevel": "critical",
+      "eventHash": "24e70003d131e7fdc574663d1cb10c2e36d8cf76e1451e75165de3bc2055ae7e"
+    },
+    {
+      "sequence": 4,
+      "timestamp": "2026-07-15T08:00:03.000Z",
+      "eventType": "policy_evaluated",
+      "decision": "ALLOW",
+      "riskLevel": "low",
+      "eventHash": "53429ebd171be399de2510a0c94905b7bcbb861c505088b4268c3f5965dc6748"
+    },
+    {
+      "sequence": 5,
+      "timestamp": "2026-07-15T08:00:04.000Z",
+      "eventType": "call_blocked",
+      "decision": "BLOCK",
+      "riskLevel": "critical",
+      "eventHash": "8c9a672e4ccc3770fc8aa195f367f664166d236cc38d29ed03c8812ab5fd95cf"
+    },
+    {
+      "sequence": 6,
+      "timestamp": "2026-07-15T08:00:05.000Z",
+      "eventType": "output_inspected",
+      "decision": "REDACT",
+      "riskLevel": "critical",
+      "eventHash": "08bed9d072f52de83f521db258cde66359e4296321b1a61b6370656df094bb9b"
+    },
+    {
+      "sequence": 7,
+      "timestamp": "2026-07-15T08:00:06.000Z",
+      "eventType": "output_inspected",
+      "decision": "QUARANTINE",
+      "riskLevel": "critical",
+      "eventHash": "b95758c72f2b09ae7b2324194165a994bc98dc7471640de3f3134a7bf1e72193"
+    }
+  ]
+}

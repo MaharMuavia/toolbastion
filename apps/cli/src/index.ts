@@ -166,7 +166,7 @@ program.command("dashboard")
     if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) throw new Error("Dashboard port must be between 1 and 65535");
     const rootDir = process.cwd();
     await startApi({ rootDir, configPath: path.resolve(config), dashboardRoot: path.join(rootDir, "apps", "dashboard", "dist") }, parsedPort);
-    writeDiagnostic(`MCP Warden dashboard listening on http://127.0.0.1:${parsedPort}`);
+    writeDiagnostic(`MCP Warden dashboard listening on ${process.env.WARDEN_API_HOST === "0.0.0.0" ? `container port ${parsedPort}` : `http://127.0.0.1:${parsedPort}`}`);
   });
 
 program.command("run")

@@ -11,6 +11,7 @@
     "packages/**/*.ts",
     "examples/**/*.ts",
     "tests/**/*.ts",
+    "playwright.config.ts",
     "eslint.config.js"
   ]
 }

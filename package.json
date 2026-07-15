@@ -16,12 +16,18 @@
     "clean": "npm run clean --workspaces --if-present",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run tests/unit tests/integration",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "pretest:e2e": "npm run build",
+    "test:e2e": "playwright test",
+    "demo:offline": "vitest run tests/integration/enforcement.test.ts --reporter=verbose",
+    "evaluate": "node ./scripts/evaluate.mjs",
+    "snapshot": "node ./scripts/generate-snapshot.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.31.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "24.0.14",
     "eslint": "9.31.0",
     "globals": "16.3.0",

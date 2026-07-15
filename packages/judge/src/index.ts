@@ -71,16 +71,18 @@ function unavailable(checkName: typeof checkNames[number], reason: string): Judg
 export class OpenAIJudge implements JudgeProvider {
   readonly #client: OpenAI;
   readonly #config: WardenConfig["judge"];
+  readonly #configured: boolean;
   #calls = 0;
 
   constructor(config: WardenConfig["judge"], apiKey = process.env.OPENAI_API_KEY) {
     this.#config = config;
+    this.#configured = Boolean(apiKey);
     this.#client = new OpenAI({ apiKey: apiKey ?? "missing" });
   }
 
   async evaluateRequest(request: JudgeRequest): Promise<JudgeVerdict> {
     const started = Date.now();
-    if (!process.env.OPENAI_API_KEY) return this.#failureVerdict(request, "OPENAI_API_KEY is not configured", started);
+    if (!this.#configured) return this.#failureVerdict(request, "OPENAI_API_KEY is not configured", started);
     if (this.#calls + checkNames.length > this.#config.max_calls_per_session) return this.#failureVerdict(request, "Session model-call limit reached", started);
     this.#calls += checkNames.length;
     try {

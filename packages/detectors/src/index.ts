@@ -70,8 +70,9 @@ export async function inspectPath(value: string, fieldPath: string, config: Ward
     findings.push(evidence("path", "path_expansion_attempt", "high", "Path uses home or environment expansion syntax", fieldPath));
   }
   const portable = decoded.replaceAll("\\", "/");
-  if (/^(?:[a-zA-Z]:\/|\/\/)/.test(portable) && process.platform !== "win32") {
-    findings.push(evidence("path", "windows_absolute_path", "high", "Windows absolute or UNC path is outside the portable project scope", fieldPath));
+  if (/^(?:[a-zA-Z]:\/|\/\/)/.test(portable)) {
+    if (process.platform !== "win32") findings.push(evidence("path", "windows_absolute_path", "high", "Windows absolute or UNC syntax was detected on a non-Windows host", fieldPath));
+    findings.push(evidence("path", "path_outside_project_root", "critical", "Absolute or UNC path is outside the configured project scope", fieldPath));
     return findings;
   }
 
@@ -92,6 +93,8 @@ export async function inspectPath(value: string, fieldPath: string, config: Ward
   const normalizeCase = (input: string) => process.platform === "win32" ? input.toLowerCase() : input;
   const relative = path.relative(normalizeCase(canonicalRoot), normalizeCase(comparisonCandidate));
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    const lexicalRelative = path.relative(normalizeCase(canonicalRoot), normalizeCase(candidate));
+    if (!(lexicalRelative === ".." || lexicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(lexicalRelative))) findings.push(evidence("path", "symlink_escape", "critical", "A symlink or junction resolves outside the configured project root", fieldPath));
     findings.push(evidence("path", "path_outside_project_root", "critical", "Canonical path escapes the configured project root", fieldPath));
     return findings;
   }

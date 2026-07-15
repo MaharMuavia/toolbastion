@@ -12,14 +12,25 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run test:e2e
       - run: npm run build
-
+      - run: npm run evaluate
+      - run: npm audit --audit-level=high
+      - name: Secret scan
+        shell: bash
+        run: |
+          if git grep -nE 'sk-(proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}'; then
+            echo "Credential-like material found in tracked files"
+            exit 1
+          fi

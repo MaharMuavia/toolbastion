@@ -1,5 +1,21 @@
 # Engineering decisions
 
+## 2026-07-15 — Honest offline evaluation and reproducible judge artifact
+
+- Decision: Evaluate 35 deterministic fixtures without network calls, publish explicit limitations, ship a read-only snapshot, and package the same build as a non-root read-only container.
+- Alternatives: report synthetic model quality as live results; require an API key for judging; make the dashboard the enforcement path.
+- Why: judges need a reproducible security demonstration that cannot leak credentials and remains honest about deferred live-model acceptance.
+- Trade-off: GPT escalation and cache metrics are structural/offline measurements until billing is activated.
+- Source: human requirement, implemented and verified by Codex.
+
+## 2026-07-15 — Browser server lifecycle stays inside the Playwright worker
+
+- Decision: Start and close the Fastify API from the Playwright worker, using installed Chrome locally and pinned Chromium in CI.
+- Alternatives: shell-managed web server; browser-only mocked data.
+- Why: direct lifecycle ownership eliminates orphaned Windows child processes while exercising real API/download behavior.
+- Trade-off: browser tests run serially through one controlled API instance.
+- Source: proposed by Codex after reproducing shell child cleanup issues.
+
 ## 2026-07-15 — Read-only Codex proposals with local verification
 
 - Decision: Invoke actual `codex exec` with ephemeral state, ignored user config/rules, read-only sandbox, disabled approvals, schema output, and stdin-delivered redacted evidence; strip `OPENAI_API_KEY` and never auto-apply.

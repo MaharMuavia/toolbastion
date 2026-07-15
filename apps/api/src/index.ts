@@ -31,6 +31,8 @@ const sessionSchema = z.object({
 });
 type SnapshotSession = z.infer<typeof sessionSchema>;
 
+const attackScenarioSchema = z.object({ id: z.string(), title: z.string(), category: z.string(), expected: z.string(), actual: z.string(), summary: z.string() });
+
 export type ApiOptions = {
   rootDir: string;
   configPath?: string;
@@ -65,7 +67,9 @@ export async function createApi(options: ApiOptions) {
     methods: ["GET", "POST"]
   });
   const snapshotPath = options.snapshotPath ?? path.join(options.rootDir, "fixtures", "dashboard-snapshot", "session.json");
+  const snapshotRoot = path.join(options.rootDir, "apps", "dashboard", "public", "snapshot");
   const session = await loadSession(snapshotPath);
+  const attackScenarios = z.array(attackScenarioSchema).parse(JSON.parse(await readFile(path.join(options.rootDir, "fixtures", "dashboard-snapshot", "scenarios.json"), "utf8")));
 
   app.get("/api/health", () => ({ status: "ok" }));
   app.get("/api/version", () => ({ version: "0.1.0" }));
@@ -87,6 +91,20 @@ export async function createApi(options: ApiOptions) {
     const { sessionId } = request.params as { sessionId: string };
     return sessionId === session.sessionId ? metrics(session) : reply.code(404).send({ error: "session_not_found" });
   });
+  app.get("/api/sessions/:sessionId/report", async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string };
+    if (sessionId !== session.sessionId) return reply.code(404).send({ error: "session_not_found" });
+    const query = z.object({ format: z.enum(["json", "markdown"]).default("markdown") }).parse(request.query);
+    const extension = query.format === "json" ? "json" : "md";
+    const content = await readFile(path.join(snapshotRoot, `report.${extension}`), "utf8");
+    return reply.header("Content-Type", query.format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8").header("Content-Disposition", `attachment; filename="warden-${sessionId}.${extension}"`).send(content);
+  });
+  app.get("/api/sessions/:sessionId/audit", async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string };
+    if (sessionId !== session.sessionId) return reply.code(404).send({ error: "session_not_found" });
+    return reply.header("Content-Type", "application/x-ndjson; charset=utf-8").header("Content-Disposition", `attachment; filename="warden-${sessionId}-redacted.jsonl"`).send(await readFile(path.join(snapshotRoot, "audit.jsonl"), "utf8"));
+  });
+  app.get("/api/evaluation", async (_request, reply) => reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=warden-evaluation-summary.json").send(await readFile(path.join(snapshotRoot, "evaluation-summary.json"), "utf8")));
   app.get("/api/trust", async (_request, reply) => {
     try { return await readTrustBaseline(path.join(options.rootDir, ".warden", "warden.lock.json")); }
     catch { return reply.code(404).send({ error: "trust_baseline_unavailable" }); }
@@ -102,10 +120,13 @@ export async function createApi(options: ApiOptions) {
     try { wardenConfigSchema.parse(parse(body.yaml)); return { valid: true, issues: [] }; }
     catch (error) { if (error instanceof ZodError) return reply.code(400).send({ valid: false, issues: formatZodIssues(error) }); throw error; }
   });
+  app.get("/api/demo/scenarios", () => attackScenarios.map((scenario) => ({ id: scenario.id, title: scenario.title, category: scenario.category, expected: scenario.expected, summary: scenario.summary })));
   app.post("/api/demo/run", (request, reply) => {
     const validated = z.object({ scenarioId: z.string().regex(/^[a-z0-9-]{1,80}$/) }).safeParse(request.body);
     if (!validated.success) return reply.code(400).send({ error: "invalid_request", issues: formatZodIssues(validated.error) });
-    return { mode: "OFFLINE FIXTURE REPLAY", sessionId: session.sessionId, events: session.events };
+    const scenario = attackScenarios.find((item) => item.id === validated.data.scenarioId);
+    if (!scenario) return reply.code(404).send({ error: "scenario_not_found" });
+    return { mode: "OFFLINE FIXTURE REPLAY", sessionId: session.sessionId, scenarioId: scenario.id, expected: scenario.expected, actual: scenario.actual, matched: scenario.expected === scenario.actual, summary: scenario.summary };
   });
   app.get("/api/events", (_request, reply) => {
     reply.hijack();
@@ -125,7 +146,7 @@ export async function createApi(options: ApiOptions) {
   return app;
 }
 
-export async function startApi(options: ApiOptions, port = 4782): Promise<void> {
+export async function startApi(options: ApiOptions, port = 4782, host = process.env.WARDEN_API_HOST ?? "127.0.0.1"): Promise<void> {
   const app = await createApi(options);
-  await app.listen({ host: "127.0.0.1", port });
+  await app.listen({ host, port });
 }

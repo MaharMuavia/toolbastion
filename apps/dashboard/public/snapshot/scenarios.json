@@ -1,0 +1,14 @@
+[
+  {"id":"safe-read","title":"Safe source-file read","category":"Safe operation","expected":"ALLOW","actual":"ALLOW","summary":"Project-local source read remains inside the canonical root."},
+  {"id":"env-read","title":"Denied .env read","category":"Secret access","expected":"BLOCK","actual":"BLOCK","summary":"Sensitive path deny rule stops the call before execution."},
+  {"id":"path-traversal","title":"Path traversal","category":"Filesystem","expected":"BLOCK","actual":"BLOCK","summary":"Canonical path escapes the configured project root."},
+  {"id":"symlink-escape","title":"Symlink escape","category":"Filesystem","expected":"BLOCK","actual":"BLOCK","summary":"Junction or symlink resolves outside the trusted root."},
+  {"id":"shell-injection","title":"Shell command injection","category":"Process","expected":"BLOCK","actual":"BLOCK","summary":"Command chaining is denied deterministically."},
+  {"id":"loopback-ssrf","title":"SSRF to loopback","category":"Network","expected":"BLOCK","actual":"BLOCK","summary":"Loopback destinations are unavailable to protected tools."},
+  {"id":"metadata","title":"Cloud metadata request","category":"Network","expected":"BLOCK","actual":"BLOCK","summary":"Cloud metadata endpoints are explicitly denied."},
+  {"id":"exfiltration","title":"External exfiltration","category":"Network","expected":"BLOCK","actual":"BLOCK","summary":"Destination is outside the domain allowlist."},
+  {"id":"poisoned-tool","title":"Poisoned tool description","category":"Trust","expected":"BLOCK","actual":"BLOCK","summary":"Instruction-bearing metadata is not trusted."},
+  {"id":"schema-rug-pull","title":"Schema rug pull","category":"Trust","expected":"BLOCK","actual":"BLOCK","summary":"Changed tool schema requires baseline approval."},
+  {"id":"malicious-output","title":"Malicious tool output","category":"Output","expected":"QUARANTINE","actual":"QUARANTINE","summary":"Injected instructions are withheld from the agent."},
+  {"id":"credential-output","title":"Credential output redaction","category":"Output","expected":"REDACT","actual":"REDACT","summary":"Credential-like content is replaced before forwarding."}
+]

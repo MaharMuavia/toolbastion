@@ -1,0 +1,11 @@
+services:
+  judge:
+    image: ${WARDEN_IMAGE:-ghcr.io/mouav/mcp-warden:0.1.0-rc.1}
+    pull_policy: ${WARDEN_PULL_POLICY:-always}
+    ports:
+      - "127.0.0.1:4782:4782"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
