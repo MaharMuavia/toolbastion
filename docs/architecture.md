@@ -81,7 +81,7 @@ Zod validates configuration, persisted artifacts, API inputs, and model/remediat
 
 ## Target egress boundary
 
-ToolBastion sees MCP messages, not TCP connections made by an arbitrary target. `network.target_egress` therefore defaults to `blocked` in enforce mode for recognized network, shell, and command execution. `isolated` is the only alternative: ToolBastion verifies that an immutable Docker image is available and launches the target with `--network=none`, a read-only root/project mount, dropped capabilities, `no-new-privileges`, non-root UID, bounded tmpfs, and PID/memory/CPU limits. The container cannot resolve or connect to any network destination; this is containment, not an allowlisted egress proxy.
+ToolBastion sees MCP messages, not TCP connections made by an arbitrary target. `network.target_egress` therefore defaults to `blocked` in enforce mode for recognized network, shell, and command execution. `isolated` is the only alternative: ToolBastion verifies that an immutable Docker image is available and launches the target with `--network=none`, a read-only project mount beneath an image-owned runtime dependency directory, dropped capabilities, `no-new-privileges`, non-root UID, bounded tmpfs, and PID/memory/CPU limits. The container cannot resolve or connect to any network destination; this is containment, not an allowlisted egress proxy.
 
 ## Reliability boundary
 

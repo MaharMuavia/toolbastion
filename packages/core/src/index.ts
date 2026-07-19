@@ -134,7 +134,8 @@ export function buildIsolatedTargetEnvironment(envAllowlist: string[], environme
   return allowedTargetEnvironmentEntries(envAllowlist, environment);
 }
 
-const DOCKER_WORKSPACE = "/workspace";
+const DOCKER_RUNTIME_ROOT = "/workspace";
+const DOCKER_WORKSPACE = `${DOCKER_RUNTIME_ROOT}/project`;
 
 type DockerIsolation = Extract<TargetServerConfig["isolation"], { provider: "docker" }>;
 type TargetClientConfig = TargetServerConfig | TargetServerConfigInput | (Omit<TargetServerConfigInput, "env_allowlist"> & { envAllowlist?: string[] });
@@ -162,6 +163,7 @@ export function buildDockerTargetCommand(config: TargetServerConfig, projectRoot
       "--user", isolation.user,
       "--pids-limit", String(isolation.pids_limit), "--memory", `${isolation.memory_mb}m`, "--cpus", String(isolation.cpus),
       "--tmpfs", `/tmp:rw,noexec,nosuid,nodev,size=${isolation.tmpfs_size_mb}m`,
+      "--tmpfs", `${DOCKER_WORKSPACE}/node_modules:rw,noexec,nosuid,nodev,size=16m`,
       "--mount", `type=bind,src=${source},dst=${DOCKER_WORKSPACE},readonly`,
       "--workdir", dockerWorkdir(source, config.cwd),
       ...environmentArgs,

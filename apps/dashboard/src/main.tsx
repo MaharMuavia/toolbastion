@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { StrictMode, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource/josefin-sans/400.css";
 import "@fontsource/josefin-sans/500.css";
@@ -39,6 +39,19 @@ const consoleHashes = new Set(["#console", "#overview", "#timeline", "#attack-la
 
 function snapshotUrl(file: string): string {
   return new URL(`snapshot/${file}`, document.baseURI).toString();
+}
+
+function apiTokenFromFragment(): string | undefined {
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
+  if (token === null) return undefined;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  return token;
+}
+
+function apiFetch(url: string, token: string | undefined, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  if (token !== undefined) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(url, { ...init, headers });
 }
 
 function Icon({ name }: { name: IconName }) {
@@ -134,6 +147,7 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
 
 function App() {
   const [view, setView] = useState<View>(() => consoleHashes.has(window.location.hash) ? "console" : "landing");
+  const [apiToken] = useState(apiTokenFromFragment);
   const [session, setSession] = useState<Session | null>(null);
   const [selected, setSelected] = useState<Event | null>(null);
   const [error, setError] = useState("");
@@ -169,12 +183,12 @@ function App() {
     let mounted = true;
     const load = async () => {
       try {
-        const listResponse = await fetch("/api/sessions");
+        const listResponse = await apiFetch("/api/sessions", apiToken);
         if (!listResponse.ok) throw new Error("Dashboard API unavailable");
         const summaries = await listResponse.json() as SessionSummary[];
         const active = summaries[0];
         if (!active) throw new Error("No enforcement session is available");
-        const response = await fetch(`/api/sessions/${encodeURIComponent(active.sessionId)}`);
+        const response = await apiFetch(`/api/sessions/${encodeURIComponent(active.sessionId)}`, apiToken);
         if (!response.ok) throw new Error("Active session is unavailable");
         const value = await response.json() as Session;
         if (mounted) { setSession(value); setSelected(value.events.at(-1) ?? null); }
@@ -191,12 +205,12 @@ function App() {
     };
     void load();
     return () => { mounted = false; };
-  }, [view]);
+  }, [apiToken, view]);
   useEffect(() => {
     if (view !== "console" || !session || session.label !== "LIVE LOCAL SESSION") return;
     const refresh = async () => {
       try {
-        const response = await fetch(`/api/sessions/${encodeURIComponent(session.sessionId)}`);
+        const response = await apiFetch(`/api/sessions/${encodeURIComponent(session.sessionId)}`, apiToken);
         if (!response.ok) return;
         const next = await response.json() as Session;
         setSession(next);
@@ -205,16 +219,16 @@ function App() {
     };
     const timer = window.setInterval(() => { void refresh(); }, 1_000);
     return () => window.clearInterval(timer);
-  }, [session?.label, session?.sessionId, view]);
+  }, [apiToken, session?.label, session?.sessionId, view]);
   useEffect(() => {
     if (view !== "console") return;
-    fetch("/api/policy").then((response) => response.ok ? response.json() as Promise<PolicyDetail> : null).then(setPolicy).catch(() => setPolicy(null));
-  }, [view]);
+    apiFetch("/api/policy", apiToken).then((response) => response.ok ? response.json() as Promise<PolicyDetail> : null).then(setPolicy).catch(() => setPolicy(null));
+  }, [apiToken, view]);
   useEffect(() => {
     if (view !== "console") return;
-    fetch("/api/demo/scenarios").then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<Scenario[]>; }).then(setScenarios)
+    apiFetch("/api/demo/scenarios", apiToken).then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<Scenario[]>; }).then(setScenarios)
       .catch(() => { fetch(snapshotUrl("scenarios.json")).then((response) => response.json() as Promise<Scenario[]>).then(setScenarios).catch(() => setScenarios([])); });
-  }, [view]);
+  }, [apiToken, view]);
   const latestCritical = useMemo<Event | undefined>(() => session?.events.filter((event) => event.riskLevel === "critical").at(-1), [session]);
 
   async function runScenario(scenario: Scenario): Promise<void> {
@@ -222,12 +236,27 @@ function App() {
     try {
       if (readOnly) setLabResult({ scenarioId: scenario.id, expected: scenario.expected, actual: scenario.actual ?? scenario.expected, matched: (scenario.actual ?? scenario.expected) === scenario.expected, summary: scenario.summary });
       else {
-        const response = await fetch("/api/demo/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioId: scenario.id }) });
+        const response = await apiFetch("/api/demo/run", apiToken, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioId: scenario.id }) });
         if (!response.ok) throw new Error("Scenario replay failed");
         setLabResult(await response.json() as ScenarioResult);
       }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Scenario replay failed"); }
     finally { setLabBusy(""); }
+  }
+
+  async function downloadArtifact(event: MouseEvent<HTMLAnchorElement>, href: string): Promise<void> {
+    if (apiToken === undefined || readOnly) return;
+    event.preventDefault();
+    try {
+      const response = await apiFetch(href, apiToken);
+      if (!response.ok) throw new Error("Report download failed");
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = href.includes("audit") ? "toolbastion-audit.jsonl" : href.includes("evaluation") ? "toolbastion-evaluation-summary.json" : href.includes("format=json") ? "toolbastion-report.json" : "toolbastion-report.md";
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Report download failed"); }
   }
 
   if (view === "landing") return <Landing onOpenConsole={openConsole} />;
@@ -287,7 +316,7 @@ function App() {
         ["JSON report", readOnly ? snapshotUrl("report.json") : `/api/sessions/${session.sessionId}/report?format=json`],
         ["Redacted audit JSONL", readOnly ? snapshotUrl("audit.jsonl") : `/api/sessions/${session.sessionId}/audit`],
         ["Evaluation summary", readOnly ? snapshotUrl("evaluation-summary.json") : "/api/evaluation"]
-      ].map(([label, href]) => <a key={label} href={href} download>{label}<span><Icon name="download" /></span></a>)}</div></section>
+      ].map(([label, href]) => <a key={label} href={href} download onClick={(event) => void downloadArtifact(event, href!)}>{label}<span><Icon name="download" /></span></a>)}</div></section>
       <footer><span>ToolBastion v0.1.0</span><span>Dashboard is outside the enforcement path</span></footer>
     </main>
   </div>;

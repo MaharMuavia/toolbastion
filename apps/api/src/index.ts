@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import cors from "@fastify/cors";
@@ -43,7 +44,23 @@ export type ApiOptions = {
   dashboardRoot?: string;
   eventLogPath?: string;
   allowRemote?: boolean;
+  accessToken?: string;
 };
+
+const LOCAL_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,256}$/;
+
+function requireValidAccessToken(value: string): string {
+  if (!ACCESS_TOKEN_PATTERN.test(value)) throw new Error("TOOLBASTION_API_TOKEN must be a 32-256 character base64url secret");
+  return value;
+}
+
+function authorized(authorization: string | undefined, accessToken: string): boolean {
+  if (authorization === undefined || !authorization.startsWith("Bearer ")) return false;
+  const supplied = Buffer.from(authorization.slice("Bearer ".length), "utf8");
+  const expected = Buffer.from(accessToken, "utf8");
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
 
 async function loadSession(filePath: string): Promise<SnapshotSession> {
   return sessionSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
@@ -67,7 +84,14 @@ function metrics(session: SnapshotSession) {
 
 export async function createApi(options: ApiOptions) {
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
+  const accessToken = options.accessToken === undefined ? undefined : requireValidAccessToken(options.accessToken);
   let sseClients = 0;
+  if (accessToken !== undefined) {
+    app.addHook("onRequest", async (request, reply) => {
+      if (request.url.split("?", 1)[0] === "/api/health") return;
+      if (!authorized(request.headers.authorization, accessToken)) return reply.code(401).send({ error: "authentication_required" });
+    });
+  }
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("Content-Security-Policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:");
     reply.header("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
@@ -78,7 +102,8 @@ export async function createApi(options: ApiOptions) {
   });
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || origin === "http://127.0.0.1:5173" || origin === "http://localhost:5173"),
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Authorization", "Content-Type"]
   });
   const snapshotPath = options.snapshotPath ?? path.join(options.rootDir, "fixtures", "dashboard-snapshot", "session.json");
   const snapshotRoot = path.join(options.rootDir, "apps", "dashboard", "public", "snapshot");
@@ -165,7 +190,8 @@ export async function createApi(options: ApiOptions) {
   });
   app.get("/api/evaluation", async (_request, reply) => reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=toolbastion-evaluation-summary.json").send(await readFile(path.join(snapshotRoot, "evaluation-summary.json"), "utf8")));
   app.get("/api/trust", async (_request, reply) => {
-    try { return await readTrustBaseline(path.join(options.rootDir, ".toolbastion", "toolbastion.lock.json")); }
+    const trustRoot = runtimeConfig?.project_root ?? options.rootDir;
+    try { return await readTrustBaseline(path.join(trustRoot, ".toolbastion", "toolbastion.lock.json")); }
     catch { return reply.code(404).send({ error: "trust_baseline_unavailable" }); }
   });
   app.get("/api/policy", async (_request, reply) => {
@@ -234,9 +260,12 @@ export async function createApi(options: ApiOptions) {
 
 export async function startApi(options: ApiOptions, port = 4782, host = process.env.TOOLBASTION_API_HOST ?? "127.0.0.1"): Promise<void> {
   const normalizedHost = host.toLowerCase();
-  if (!options.allowRemote && !["127.0.0.1", "::1", "localhost"].includes(normalizedHost)) {
+  const remote = !LOCAL_HOSTS.has(normalizedHost);
+  if (!options.allowRemote && remote) {
     throw new Error("Refusing to bind the dashboard API outside localhost without explicit --expose acknowledgement");
   }
-  const app = await createApi(options);
+  const accessToken = options.accessToken ?? (remote ? process.env.TOOLBASTION_API_TOKEN : undefined);
+  if (remote && accessToken === undefined) throw new Error("Refusing to bind the dashboard API outside localhost without TOOLBASTION_API_TOKEN");
+  const app = await createApi({ ...options, ...(accessToken === undefined ? {} : { accessToken }) });
   await app.listen({ host, port });
 }

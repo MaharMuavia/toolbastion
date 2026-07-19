@@ -2,6 +2,7 @@ import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApi, startApi } from "../../apps/api/src/index.js";
+import { createTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
 
 const root = path.resolve(".");
 const app = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath: path.join(root, ".test-tmp", "missing-runtime-events.jsonl"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
@@ -24,6 +25,18 @@ describe("dashboard API", () => {
 
   it("requires explicit acknowledgement before a non-localhost bind", async () => {
     await expect(startApi({ rootDir: root }, 4782, "0.0.0.0")).rejects.toThrow(/--expose acknowledgement/);
+    await expect(startApi({ rootDir: root, allowRemote: true }, 4782, "0.0.0.0")).rejects.toThrow(/TOOLBASTION_API_TOKEN/);
+  });
+
+  it("requires a bearer token when API authentication is configured", async () => {
+    const token = "a".repeat(32);
+    const protectedApp = await createApi({ rootDir: root, accessToken: token });
+    try {
+      await protectedApp.ready();
+      expect((await protectedApp.inject({ method: "GET", url: "/api/health" })).statusCode).toBe(200);
+      expect((await protectedApp.inject({ method: "GET", url: "/api/sessions" })).statusCode).toBe(401);
+      expect((await protectedApp.inject({ method: "GET", url: "/api/sessions", headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200);
+    } finally { await protectedApp.close(); }
   });
 
   it("serves the production dashboard from the localhost API", async () => {
@@ -117,6 +130,30 @@ describe("dashboard API", () => {
       }
     } finally {
       await liveApp.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reads the trust baseline from the configured project root", async () => {
+    const directory = path.join(root, ".test-tmp", `api-trust-root-${crypto.randomUUID()}`);
+    const projectRoot = path.join(directory, "project");
+    const configPath = path.join(directory, "toolbastion.config.json");
+    await mkdir(projectRoot, { recursive: true });
+    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline("configured-target", []));
+    await writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "shadow",
+      project_root: projectRoot,
+      target: { name: "configured-target", command: process.execPath, args: [], env_allowlist: [] }
+    }), "utf8");
+    const configuredApp = await createApi({ rootDir: root, configPath });
+    try {
+      await configuredApp.ready();
+      const response = await configuredApp.inject({ method: "GET", url: "/api/trust" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json<{ targetName: string }>().targetName).toBe("configured-target");
+    } finally {
+      await configuredApp.close();
       await rm(directory, { recursive: true, force: true });
     }
   });

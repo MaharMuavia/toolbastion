@@ -20,7 +20,7 @@ docker pull ghcr.io/maharmuavia/toolbastion:v0.1.0
 docker compose -f docker-compose.judge.yml up
 ```
 
-The container must run as a non-root user, accept a read-only root filesystem, and serve the clearly labelled offline fixture without an OpenAI key. It listens on all interfaces only inside its network namespace because the Compose mapping publishes `127.0.0.1:4782`; the CLI's `--expose` flag is explicit in the image command.
+The container must run as a non-root user, accept a read-only root filesystem, and serve the clearly labelled offline fixture without an OpenAI key. Remote API binds require a `TOOLBASTION_API_TOKEN` base64url secret of 32-256 characters. Supply it through the deployment secret store, open the dashboard using `#token=<secret>` (the fragment is not transmitted), and never expose the container port beyond a trusted network boundary. The Compose mapping publishes `127.0.0.1:4782`; the CLI's `--expose` flag is explicit in the image command.
 
 ## Publication gate
 

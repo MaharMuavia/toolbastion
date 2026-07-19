@@ -35,9 +35,10 @@ describe("Docker target isolation", () => {
     expect(launch.args).toContain("0.5");
     expect(launch.args).toContain("--tmpfs");
     expect(launch.args).toContain("/tmp:rw,noexec,nosuid,nodev,size=32m");
-    expect(launch.args).toContain(`type=bind,src=${projectRoot},dst=/workspace,readonly`);
+    expect(launch.args).toContain(`type=bind,src=${projectRoot},dst=/workspace/project,readonly`);
     expect(launch.args).toContain("--workdir");
-    expect(launch.args).toContain("/workspace");
+    expect(launch.args).toContain("/workspace/project");
+    expect(launch.args).toContain("/workspace/project/node_modules:rw,noexec,nosuid,nodev,size=16m");
     expect(launch.args).toContain("PATH=/usr/local/bin");
     expect(launch.args).toContain("TOOLBASTION_ALLOWED=allowed");
     expect(launch.args.slice(-3)).toEqual([image, "node", "./examples/benign-server/dist/index.js"]);

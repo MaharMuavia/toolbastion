@@ -3,6 +3,8 @@ services:
     build:
       context: .
     image: toolbastion:local
+    environment:
+      TOOLBASTION_API_TOKEN: ${TOOLBASTION_API_TOKEN:?Set a 32+ character base64url token before starting the dashboard}
     ports:
       - "127.0.0.1:4782:4782"
     read_only: true

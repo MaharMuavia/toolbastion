@@ -7,11 +7,12 @@ The judge artifact is an offline, read-only review experience. It serves the com
 Install Docker Desktop or Docker Engine with Compose, then run:
 
 ```bash
+export TOOLBASTION_API_TOKEN="$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')"
 docker compose -f docker-compose.judge.yml pull
 docker compose -f docker-compose.judge.yml up
 ```
 
-Open `http://127.0.0.1:4782`. The compose file binds only to localhost, runs a read-only filesystem, enables `no-new-privileges`, and loads the recorded offline corpus. Stop and remove it with:
+Open `http://127.0.0.1:4782/#token=$TOOLBASTION_API_TOKEN`. The fragment is never sent in HTTP requests; the dashboard uses it only as an in-memory bearer credential. The compose file binds only to localhost, runs a read-only filesystem, enables `no-new-privileges`, and loads the recorded offline corpus. Stop and remove it with:
 
 ```bash
 docker compose -f docker-compose.judge.yml down
@@ -24,7 +25,7 @@ docker build -t toolbastion:local .
 TOOLBASTION_IMAGE=toolbastion:local TOOLBASTION_PULL_POLICY=never docker compose -f docker-compose.judge.yml up
 ```
 
-In PowerShell, set `$env:TOOLBASTION_IMAGE="toolbastion:local"` and `$env:TOOLBASTION_PULL_POLICY="never"` before the compose command.
+In PowerShell, set `$env:TOOLBASTION_IMAGE="toolbastion:local"`, `$env:TOOLBASTION_PULL_POLICY="never"`, and `$env:TOOLBASTION_API_TOKEN=[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 })) -replace '[+/=]', ''` before the compose command.
 
 ## Integrity and scope
 
