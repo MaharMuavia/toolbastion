@@ -19,9 +19,13 @@
     "examples/*"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
+    "dev": "node ./scripts/dev.mjs",
+    "dev:api": "node ./apps/cli/dist/index.js dashboard --config toolbastion.config.example.yaml --port 4782",
+    "dev:frontend": "npm run dev --workspace=@toolbastion/dashboard",
+    "dev:proxy": "node ./apps/cli/dist/index.js run --config toolbastion.config.example.yaml",
     "build": "node ./scripts/build-workspaces.mjs",
     "clean": "npm run clean --workspaces --if-present",
     "lint": "eslint .",
@@ -29,12 +33,14 @@
     "test": "vitest run tests/unit tests/integration",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:docker-isolation": "vitest run tests/integration/docker-isolation.test.ts",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "demo:offline": "node ./apps/cli/dist/index.js demo",
     "evaluate": "node ./scripts/evaluate.mjs",
     "snapshot": "node ./scripts/generate-snapshot.mjs",
-    "verify:snapshot": "node ./scripts/verify-snapshot.mjs"
+    "verify:snapshot": "node ./scripts/verify-snapshot.mjs",
+    "artifact:prepare": "npm run build && npm run evaluate && npm run snapshot && npm run build && npm run verify:snapshot"
   },
   "devDependencies": {
     "@eslint/js": "9.31.0",

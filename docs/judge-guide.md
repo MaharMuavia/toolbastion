@@ -29,18 +29,20 @@ In PowerShell, set `$env:TOOLBASTION_IMAGE="toolbastion:local"` and `$env:TOOLBA
 ## Integrity and scope
 
 - The banner says `OFFLINE FIXTURE REPLAY` or `READ-ONLY SNAPSHOT`.
-- No OpenAI credential is required or read.
+- No OpenAI key is required, used for model calls, or included in the image or snapshot.
 - Downloads contain redacted audit data only.
 - This artifact demonstrates deterministic and recorded semantic behavior; it does not claim to run a live MCP target.
 
 Live GPT-5.6 mode is optional and should be run from a source checkout with the user's own active project credential. Never bake credentials into an image.
 
-## Verify the recorded audit chain
+## Verify the recorded snapshot
 
-From a source or release checkout after the build:
+The GitHub Release contains a source archive generated from the tagged commit; extract it, install its locked dependencies, and prepare the artifact before verification:
 
 ```powershell
+npm.cmd ci
+npm.cmd run artifact:prepare
 npm.cmd run verify:snapshot
 ```
 
-The command exits nonzero if sequence, previous-hash linkage, event hash, or parsed event validation fails. The hash chain is tamper-evident, not a digital signature or externally anchored attestation.
+The command exits nonzero if the v2 audit start/event/seal lifecycle, sequence, previous-hash linkage, event hashes, displayed session, regenerated reports, scenarios, or fixture summary disagree. The hash chain is tamper-evident, not a digital signature or externally anchored attestation.

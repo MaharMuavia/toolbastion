@@ -10,8 +10,11 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => app.close());
 
-test("critical dashboard routes, Attack Lab, and report download work", async ({ page }) => {
+test("landing page opens the console, where routes, Attack Lab, and report download work", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Secure MCP tools before they execute." })).toBeVisible();
+  await expect(page.getByText("A tool call is never allowed to bypass the enforcement path.")).toBeVisible();
+  await page.getByRole("button", { name: "Open security console" }).click();
   await expect(page.getByRole("heading", { name: "Runtime overview" })).toBeVisible();
   for (const [label, target] of [["Overview", "overview"], ["Session timeline", "timeline"], ["Attack Lab", "attack-lab"], ["Policy", "policy"], ["Reports", "reports"]] as const) {
     const link = page.getByRole("link", { name: label, exact: true });
@@ -34,6 +37,7 @@ test("critical dashboard routes, Attack Lab, and report download work", async ({
 test("static dashboard fallback is clearly read-only", async ({ page }) => {
   await page.route("**/api/**", (route) => route.abort());
   await page.goto("/");
+  await page.getByRole("button", { name: "Open security console" }).click();
   await expect(page.getByText("READ-ONLY SNAPSHOT")).toBeVisible();
   await expect(page.getByText("Read-only recorded security session")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recorded scenario explorer" })).toBeVisible();

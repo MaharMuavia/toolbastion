@@ -28,4 +28,14 @@ describe("output firewall", () => {
   it("allows URLs on the explicit domain allowlist", () => {
     expect(inspectToolResult({ text: "See https://docs.example.com/guide" }, config).decision).toBe("PASS");
   });
+
+  it("quarantines oversized and excessively nested results without traversing indefinitely", () => {
+    const limited = toolbastionConfigSchema.parse({
+      version: 1,
+      target: { name: "fixture", command: "node" },
+      limits: { max_output_bytes: 32, max_output_depth: 2, max_output_nodes: 10 }
+    });
+    expect(inspectToolResult({ text: "x".repeat(64) }, limited).evidence.map((item) => item.category)).toContain("output_byte_limit");
+    expect(inspectToolResult({ nested: { one: { two: { three: "value" } } } }, limited).evidence.map((item) => item.category)).toContain("output_depth_limit");
+  });
 });

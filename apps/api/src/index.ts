@@ -5,10 +5,10 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { parse } from "yaml";
 import { ZodError, z } from "zod";
-import { auditFilePath, verifyAuditFile } from "@toolbastion/audit";
+import { redactAuditPayload, resolveAuditReadFile, verifyAndReadAuditFile } from "@toolbastion/audit";
 import { readTrustBaseline } from "@toolbastion/policy";
 import { generateSessionReport, renderMarkdownReport } from "@toolbastion/reports";
-import { formatZodIssues, toolbastionConfigSchema } from "@toolbastion/shared";
+import { formatZodIssues, TOOLBASTION_VERSION, toolbastionConfigSchema } from "@toolbastion/shared";
 import { loadRuntimeSession } from "./runtime-events.js";
 
 const eventSchema = z.object({
@@ -42,6 +42,7 @@ export type ApiOptions = {
   snapshotPath?: string;
   dashboardRoot?: string;
   eventLogPath?: string;
+  allowRemote?: boolean;
 };
 
 async function loadSession(filePath: string): Promise<SnapshotSession> {
@@ -66,6 +67,15 @@ function metrics(session: SnapshotSession) {
 
 export async function createApi(options: ApiOptions) {
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
+  let sseClients = 0;
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header("Content-Security-Policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:");
+    reply.header("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "DENY");
+    return payload;
+  });
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || origin === "http://127.0.0.1:5173" || origin === "http://localhost:5173"),
     methods: ["GET", "POST"]
@@ -89,7 +99,7 @@ export async function createApi(options: ApiOptions) {
   };
 
   app.get("/api/health", () => ({ status: "ok" }));
-  app.get("/api/version", () => ({ version: "0.1.0" }));
+  app.get("/api/version", () => ({ version: TOOLBASTION_VERSION }));
   app.get("/api/config/status", async () => {
     if (!options.configPath) return { configured: false, openaiConfigured: Boolean(process.env.OPENAI_API_KEY), mode: "offline" };
     const config = toolbastionConfigSchema.parse(parse(await readFile(options.configPath, "utf8")));
@@ -122,7 +132,12 @@ export async function createApi(options: ApiOptions) {
     const extension = query.format === "json" ? "json" : "md";
     let content: string;
     if (active.label === "LIVE LOCAL SESSION" && runtimeConfig) {
-      const report = await generateSessionReport(auditFilePath(path.resolve(runtimeConfig.project_root, runtimeConfig.audit.directory), sessionId));
+      let report: Awaited<ReturnType<typeof generateSessionReport>>;
+      try {
+        report = await generateSessionReport(await resolveAuditReadFile(runtimeConfig.project_root, runtimeConfig.audit.directory, sessionId));
+      } catch {
+        return reply.code(409).send({ error: "audit_unavailable" });
+      }
       content = query.format === "json" ? `${JSON.stringify(report, null, 2)}\n` : renderMarkdownReport(report);
     } else {
       content = await readFile(path.join(snapshotRoot, `report.${extension}`), "utf8");
@@ -133,15 +148,19 @@ export async function createApi(options: ApiOptions) {
     const { sessionId } = request.params as { sessionId: string };
     const active = await currentSession();
     if (sessionId !== active.sessionId) return reply.code(404).send({ error: "session_not_found" });
-    let content: string;
+    let file: string;
     if (active.label === "LIVE LOCAL SESSION" && runtimeConfig) {
-      const file = auditFilePath(path.resolve(runtimeConfig.project_root, runtimeConfig.audit.directory), sessionId);
-      const verification = await verifyAuditFile(file);
-      if (!verification.valid) return reply.code(409).send({ error: "audit_verification_failed", issues: verification.errors });
-      content = await readFile(file, "utf8");
+      try {
+        file = await resolveAuditReadFile(runtimeConfig.project_root, runtimeConfig.audit.directory, sessionId);
+      } catch {
+        return reply.code(409).send({ error: "audit_unavailable" });
+      }
     } else {
-      content = await readFile(path.join(snapshotRoot, "audit.jsonl"), "utf8");
+      file = path.join(snapshotRoot, "audit.jsonl");
     }
+    const snapshot = await verifyAndReadAuditFile(file);
+    if (!snapshot.verification.valid) return reply.code(409).send({ error: "audit_verification_failed", issues: snapshot.verification.errors });
+    const content = snapshot.content;
     return reply.header("Content-Type", "application/x-ndjson; charset=utf-8").header("Content-Disposition", `attachment; filename="toolbastion-${sessionId}-redacted.jsonl"`).send(content);
   });
   app.get("/api/evaluation", async (_request, reply) => reply.header("Content-Type", "application/json; charset=utf-8").header("Content-Disposition", "attachment; filename=toolbastion-evaluation-summary.json").send(await readFile(path.join(snapshotRoot, "evaluation-summary.json"), "utf8")));
@@ -153,7 +172,7 @@ export async function createApi(options: ApiOptions) {
     if (!options.configPath) return reply.code(404).send({ error: "policy_unavailable" });
     const yaml = await readFile(options.configPath, "utf8");
     const config = toolbastionConfigSchema.parse(parse(yaml));
-    return { yaml, valid: true, mode: config.mode };
+    return { yaml: redactAuditPayload(yaml), valid: true, mode: config.mode };
   });
   app.post("/api/policy/validate", (request, reply) => {
     const body = z.object({ yaml: z.string().max(200_000) }).parse(request.body);
@@ -169,12 +188,22 @@ export async function createApi(options: ApiOptions) {
     return { mode: "OFFLINE FIXTURE REPLAY", sessionId: session.sessionId, scenarioId: scenario.id, expected: scenario.expected, actual: scenario.actual, matched: scenario.expected === scenario.actual, summary: scenario.summary };
   });
   app.get("/api/events", async (_request, reply) => {
+    if (sseClients >= 16) return reply.code(429).send({ error: "too_many_event_streams" });
     const active = await currentSession();
+    sseClients += 1;
+    let closed = false;
+    const close = () => {
+      if (!closed) {
+        closed = true;
+        sseClients -= 1;
+      }
+    };
     reply.hijack();
     reply.raw.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     for (const event of active.events) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
     if (active.label === "OFFLINE FIXTURE REPLAY") {
       reply.raw.end();
+      close();
       return;
     }
     let sent = active.events.length;
@@ -182,13 +211,14 @@ export async function createApi(options: ApiOptions) {
       void currentSession().then((next) => {
         if (next.sessionId !== active.sessionId) {
           reply.raw.end();
+          close();
           return;
         }
         for (const event of next.events.slice(sent)) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
         sent = next.events.length;
       }).catch(() => undefined);
     }, 500);
-    reply.raw.once("close", () => clearInterval(timer));
+    reply.raw.once("close", () => { clearInterval(timer); close(); });
   });
 
   if (options.dashboardRoot) {
@@ -203,6 +233,10 @@ export async function createApi(options: ApiOptions) {
 }
 
 export async function startApi(options: ApiOptions, port = 4782, host = process.env.TOOLBASTION_API_HOST ?? "127.0.0.1"): Promise<void> {
+  const normalizedHost = host.toLowerCase();
+  if (!options.allowRemote && !["127.0.0.1", "::1", "localhost"].includes(normalizedHost)) {
+    throw new Error("Refusing to bind the dashboard API outside localhost without explicit --expose acknowledgement");
+  }
   const app = await createApi(options);
   await app.listen({ host, port });
 }

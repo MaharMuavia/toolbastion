@@ -27,7 +27,7 @@ The 40 unique cases cover:
 | Output redaction accuracy | 100% | Curated output expectations matched. |
 | Cache hit rate | 0% | Cases are intentionally unique, so cache performance is not measured. |
 
-Latency is machine-dependent and is reported as an observation, not a benchmark or service-level guarantee.
+The generated summary intentionally omits timing measurements: the corpus is a functional correctness check, not a benchmark, and deterministic snapshots must not imply a reproducible latency figure.
 
 ## What the result does not prove
 
@@ -41,8 +41,7 @@ Latency is machine-dependent and is reported as an observation, not a benchmark 
 
 ```powershell
 npm.cmd ci
-npm.cmd run build
-npm.cmd run evaluate
+npm.cmd run artifact:prepare
 Get-Content .\reports\evaluation-summary.json
 ```
 
@@ -52,7 +51,7 @@ Primary end-to-end proof:
 npm.cmd run demo:offline
 ```
 
-The product demo calls ToolBastion over MCP, receives `BLOCK` for traversal hidden under a generic `input` field, then queries the deliberately vulnerable server's execution counter to prove the dangerous tool body was not entered. It also verifies loopback SSRF, output quarantine, credential redaction, and the complete audit hash chain.
+The product demo first runs a direct, deliberately vulnerable control that reads a generated synthetic canary and delivers it only to a temporary `127.0.0.1` collector. It then calls ToolBastion over MCP, receives `BLOCK` for a real traversal and a second `BLOCK` for an undeclared generic argument that fails the target's advertised input contract, and queries the vulnerable server's execution counter to prove neither dangerous tool body was entered. For loopback SSRF it verifies both the target delivery counter and collector attempt count remain unchanged. The retained proof contains a canary hash rather than the raw marker, plus decisions and the complete audit hash-chain result.
 
 ## Live acceptance status
 

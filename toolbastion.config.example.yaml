@@ -1,5 +1,5 @@
 version: 1
-mode: shadow
+mode: enforce
 project_root: ./
 target:
   name: benign-demo
@@ -16,6 +16,23 @@ paths:
     - "**/.env.*"
     - "**/.ssh/**"
     - "**/.aws/**"
+    - "**/.azure/**"
+    - "**/.npmrc"
+    - "**/.netrc"
+    - "**/.pypirc"
+    - "**/.envrc"
+    - "**/.git-credentials"
+    - "**/.docker/config.json"
+    - "**/.kube/config"
+    - "**/*credentials*"
+    - "**/*secret*"
+    - "**/id_rsa"
+    - "**/id_ed25519"
+    - "**/*.pem"
+    - "**/*.key"
+    - "**/*.p12"
+    - "**/*.pfx"
+    - "**/*.tfstate"
 network:
   default: deny
   allow_domains:
@@ -25,8 +42,9 @@ network:
   deny_loopback: true
   deny_link_local: true
   deny_metadata_endpoints: true
-  follow_redirects: false
   allowed_ports: [80, 443]
+  # Use isolated only with the Docker target profile; it gives the target no network namespace.
+  target_egress: blocked
 tools:
   default: judge
   rules:

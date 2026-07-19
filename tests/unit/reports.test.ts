@@ -9,10 +9,11 @@ describe("audit reports", () => {
     const log = new AuditLog(path.join(os.tmpdir(), `toolbastion-report-${crypto.randomUUID()}`), "report-session");
     await log.append("policy_decision", { decision: "BLOCK", riskLevel: "critical" });
     await log.append("call_blocked", { reason: "test" });
+    await log.close();
     const first = await generateSessionReport(log.filePath, "2026-07-18T00:00:00.000Z");
     const second = await generateSessionReport(log.filePath, "2026-07-18T00:00:00.000Z");
     expect(first).toEqual(second);
     expect(first.summary.highestRisk).toBe("critical");
-    expect(renderMarkdownReport(first)).toContain("Source integrity: verified tamper-evident hash chain");
+    expect(renderMarkdownReport(first)).toContain("Source integrity: verified tamper-evident hash chain (not externally anchored)");
   });
 });

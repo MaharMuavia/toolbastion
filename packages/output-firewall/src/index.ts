@@ -12,7 +12,6 @@ const SECRET_PATTERNS = [
 const INJECTION = /(?:ignore\s+(?:all\s+)?(?:previous|prior|system)|(?:call|invoke|execute|use)\s+(?:the\s+)?(?:tool|function)|do\s+not\s+(?:tell|show)\s+(?:the\s+)?user|system\s+message|developer\s+instruction)/i;
 const URL_PATTERN = /https?:\/\/[^\s<>"')\]]+/gi;
 const SENSITIVE_KEY = /(?:api[_-]?key|authorization|credential|password|passwd|secret|token|private[_-]?key|cookie)/i;
-const MAX_TEXT_LENGTH = 1_000_000;
 
 function riskRank(risk: RiskLevel): number { return ["none", "low", "medium", "high", "critical"].indexOf(risk); }
 
@@ -28,19 +27,32 @@ export function inspectToolResult(result: unknown, config: ToolBastionConfig): T
   const redactions: Array<{ fieldPath: string; reason: string }> = [];
   let quarantine = false;
   let highest: RiskLevel = "none";
+  let visitedNodes = 0;
+  let visitedBytes = 0;
   const add = (fieldPath: string, category: string, severity: RiskLevel, message: string) => {
     if (!evidence.some((item) => item.fieldPath === fieldPath && item.category === category)) evidence.push({ detector: "output_firewall", category, severity, message, fieldPath });
     if (riskRank(severity) > riskRank(highest)) highest = severity;
   };
 
-  const visit = (value: unknown, fieldPath: string, key = ""): unknown => {
+  const bounded = (fieldPath: string, category: "output_depth_limit" | "output_node_limit" | "output_byte_limit", message: string) => {
+    quarantine = true;
+    add(fieldPath, category, "high", message);
+    return `[QUARANTINED:${category}]`;
+  };
+  const visit = (value: unknown, fieldPath: string, key = "", depth = 0): unknown => {
+    visitedNodes += 1;
+    if (depth > config.limits.max_output_depth) return bounded(fieldPath, "output_depth_limit", "Tool output exceeded the configured nesting-depth limit");
+    if (visitedNodes > config.limits.max_output_nodes) return bounded(fieldPath, "output_node_limit", "Tool output exceeded the configured node limit");
+    visitedBytes += Buffer.byteLength(key, "utf8");
+    if (visitedBytes > config.limits.max_output_bytes) return bounded(fieldPath, "output_byte_limit", "Tool output exceeded the configured size limit");
     if (SENSITIVE_KEY.test(key) && config.outputs.redact_secrets) {
       redactions.push({ fieldPath, reason: "sensitive_field" });
       add(fieldPath, "credential_exposure", "critical", "Sensitive output field was redacted");
       return "[REDACTED:sensitive-field]";
     }
     if (typeof value === "string") {
-      if (value.length > MAX_TEXT_LENGTH) { quarantine = true; add(fieldPath, "oversized_output", "high", "Oversized tool output was quarantined"); return "[QUARANTINED:oversized-output]"; }
+      visitedBytes += Buffer.byteLength(value, "utf8");
+      if (visitedBytes > config.limits.max_output_bytes) return bounded(fieldPath, "output_byte_limit", "Tool output exceeded the configured size limit");
       const controlCount = [...value].filter((character) => character.charCodeAt(0) < 9 || (character.charCodeAt(0) > 13 && character.charCodeAt(0) < 32)).length;
       if (value.length > 64 && controlCount / value.length > 0.05) { quarantine = true; add(fieldPath, "binary_output", "high", "Binary-like tool output was quarantined"); return "[QUARANTINED:binary-output]"; }
       if (config.outputs.quarantine_prompt_injection && INJECTION.test(value)) { quarantine = true; add(fieldPath, "prompt_injection", "critical", "Tool output contains instructions directed at the agent"); }
@@ -61,9 +73,27 @@ export function inspectToolResult(result: unknown, config: ToolBastionConfig): T
       }
       return sanitized;
     }
-    if (Array.isArray(value)) return value.map((child, index) => visit(child, `${fieldPath}[${index}]`));
-    if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([childKey, child]) => [childKey, visit(child, `${fieldPath}.${childKey}`, childKey)]));
-    return value;
+    if (typeof value === "number" || typeof value === "boolean" || value === null) {
+      visitedBytes += Buffer.byteLength(String(value), "utf8");
+      return visitedBytes > config.limits.max_output_bytes ? bounded(fieldPath, "output_byte_limit", "Tool output exceeded the configured size limit") : value;
+    }
+    if (Array.isArray(value)) {
+      const result: unknown[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        if (quarantine && (visitedNodes > config.limits.max_output_nodes || visitedBytes > config.limits.max_output_bytes)) return bounded(fieldPath, "output_node_limit", "Tool output exceeded the configured structural limit");
+        result.push(visit(value[index], `${fieldPath}[${index}]`, "", depth + 1));
+      }
+      return result;
+    }
+    if (value !== null && typeof value === "object") {
+      const result: Record<string, unknown> = {};
+      for (const [childKey, child] of Object.entries(value as Record<string, unknown>)) {
+        if (quarantine && (visitedNodes > config.limits.max_output_nodes || visitedBytes > config.limits.max_output_bytes)) return bounded(fieldPath, "output_node_limit", "Tool output exceeded the configured structural limit");
+        result[childKey] = visit(child, `${fieldPath}.${childKey}`, childKey, depth + 1);
+      }
+      return result;
+    }
+    return bounded(fieldPath, "output_node_limit", "Tool output contains an unsupported value type");
   };
   const sanitizedResult = visit(result, "$result");
   const decision = quarantine ? "QUARANTINE" : redactions.length > 0 ? "REDACT" : "PASS";

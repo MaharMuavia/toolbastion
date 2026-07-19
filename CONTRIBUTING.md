@@ -15,14 +15,15 @@ npm.cmd run lint
 npm.cmd run typecheck
 npm.cmd test
 npm.cmd run test:e2e
-npm.cmd run build
-npm.cmd run evaluate
+npm.cmd run artifact:prepare
 ```
+
+When changing Docker target isolation and a Docker daemon is available, also build the supplied probe image and run `npm.cmd run test:docker-isolation` with `TOOLBASTION_DOCKER_TEST_IMAGE` set to that immutable image ID. GitHub Actions performs this host-collector proof on every pull request and release.
 
 Pull requests must explain the threat being handled, the fail-open/fail-closed behavior, and any change to documented limitations. Never add real credentials, private audit logs, or production attack data to tests.
 
 ## Security-sensitive changes
 
-Deterministic hard denies may not be overridden by a model. Remediation must remain proposal-only until explicit human approval. New subprocess execution must use argument arrays with `shell: false`, and new persisted data must be recursively redacted.
+Deterministic hard denies may not be overridden by a model. An MCP client cannot be trusted as an approval authority; ambiguous calls must not be forwarded without an independently authenticated operator channel. Remediation remains proposal-only until explicit human approval. New subprocess execution must use argument arrays with `shell: false`, and new persisted data must be recursively redacted.
 
 For vulnerabilities, do not open a public issue. Follow [SECURITY.md](SECURITY.md).

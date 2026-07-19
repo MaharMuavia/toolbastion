@@ -12,7 +12,7 @@ function config(contextFile?: string, maxBytes = 8_192) {
     mode: "enforce",
     project_root: temporary,
     target: { name: "test", command: "node" },
-    judge: { enabled: true, mode: "offline", context_file: contextFile, context_max_bytes: maxBytes }
+    judge: { enabled: true, mode: "live", context_file: contextFile, context_max_bytes: maxBytes }
   });
 }
 

@@ -11,9 +11,12 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
@@ -26,34 +29,48 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:integration
+      - name: Verify target Docker network isolation
+        shell: bash
+        run: |
+          image_id="$(docker build -q -f examples/vulnerable-server/Dockerfile.isolated .)"
+          TOOLBASTION_DOCKER_TEST_IMAGE="${image_id}" npm run test:docker-isolation
       - run: npm run test:e2e
-      - run: npm run evaluate
+      - run: npm run artifact:prepare
+      - run: git diff --exit-code -- apps/dashboard/public/snapshot
       - run: npm audit --audit-level=high
+      - name: Secret scan
+        shell: bash
+        run: |
+          if git grep -nE 'sk-(proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}'; then
+            echo "Credential-like material found in tracked files"
+            exit 1
+          fi
       - name: Build release assets
         run: |
           mkdir -p release
-          tar -czf release/toolbastion-${GITHUB_REF_NAME}-linux-x64.tar.gz apps/cli/dist apps/api/dist apps/dashboard/dist packages/*/dist fixtures schemas toolbastion.config.example.yaml package.json package-lock.json
+          git archive --format=tar.gz --prefix="toolbastion-${GITHUB_REF_NAME}/" -o "release/toolbastion-${GITHUB_REF_NAME}-source.tar.gz" "${GITHUB_SHA}"
           cp docker-compose.judge.yml docs/judge-guide.md reports/evaluation-summary.json release/
+          npm sbom --sbom-format=spdx > release/SBOM.spdx.json
           cd release
           sha256sum * > SHA256SUMS
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v6
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}
           tags: type=ref,event=tag
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-rc.') }}

@@ -18,7 +18,7 @@
 
 ## 2026-07-15 — Honest offline evaluation and reproducible judge artifact
 
-- Decision: Evaluate 35 deterministic fixtures without network calls, publish explicit limitations, ship a read-only snapshot, and package the same build as a non-root read-only container.
+- Decision: Evaluate 40 deterministic fixtures without network calls, publish explicit limitations, ship a read-only snapshot, and package the same build as a non-root read-only container.
 - Alternatives: report synthetic model quality as live results; require an API key for judging; make the dashboard the enforcement path.
 - Why: judges need a reproducible security demonstration that cannot leak credentials and remains honest about deferred live-model acceptance.
 - Trade-off: GPT escalation and cache metrics are structural/offline measurements until billing is activated.
@@ -34,17 +34,17 @@
 
 ## 2026-07-15 — Read-only Codex proposals with local verification
 
-- Decision: Invoke actual `codex exec` with ephemeral state, ignored user config/rules, read-only sandbox, disabled approvals, schema output, and stdin-delivered redacted evidence; strip `OPENAI_API_KEY` and never auto-apply.
-- Alternatives: let Codex edit policy directly; accept free-form output; reuse ToolBastion MCP configuration.
+- Decision: Invoke actual `codex exec` with ephemeral state, ignored user config/rules, an empty read-only workspace, disabled approvals, strict schema output, and fixed-shape safe metadata only; never send raw arguments or policy YAML, derive the exact host operation locally, and never auto-apply.
+- Alternatives: let Codex edit policy directly; accept free-form output or a model-authored diff; reuse the ToolBastion MCP configuration.
 - Why: remediation must be useful without becoming a recursive or policy-weakening execution path.
-- Trade-off: patches require temporary application, schema validation, event reevaluation, regression checks, and explicit human apply.
+- Trade-off: the model cannot decide business legitimacy; a proposal requires matching replay input, local schema/invariant/event/regression verification, and explicit human apply.
 - Source: human requirement, aligned with the official Codex manual and verified against local Codex v0.136.0 help.
 
 ## 2026-07-15 — Hash-chained, redacted audit source
 
-- Decision: Store canonical JSONL events with sequence, previous hash, event hash, session identity, and recursively redacted payloads.
+- Decision: Store canonical JSONL v2 sessions with exclusive start/event/seal records, sequence, previous hash, event hash, session identity, and recursively redacted payloads.
 - Alternatives: ordinary logs; retaining raw output; calling the chain a signature.
-- Why: reports must regenerate from an integrity-checked source without persisting discovered secrets.
+- Why: reports must regenerate from an integrity-checked, complete session without persisting discovered secrets.
 - Trade-off: this is a tamper-evident chain, not a cryptographic signature or externally anchored attestation.
 - Source: human product requirement, implemented by Codex.
 
@@ -127,3 +127,11 @@
 - Why: direct tsup/esbuild entry resolution intermittently scanned above this Windows/OneDrive repository, while ordered `tsc` builds are repeatable and preserve ESM package boundaries.
 - Trade-off: server packages are emitted as modules instead of bundled files, and new buildable workspaces must be added to one explicit list.
 - Source: proposed by Codex after reproducing the failure.
+
+## 2026-07-18 â€” Docker no-network target isolation replaces egress assertions
+
+- Decision: Replace the former external-guard assertion with `blocked` or `isolated`. `isolated` requires an immutable Docker image and launches the target with no network namespace, read-only filesystem/project mount, dropped capabilities, `no-new-privileges`, non-root UID, bounded tmpfs, and resource limits.
+- Alternatives: retain an operator-declared external proxy; build a custom network proxy; do nothing beyond MCP argument inspection.
+- Why: an operator assertion cannot prove that an arbitrary target did not bypass an egress proxy. A no-network namespace is a concrete, testable containment boundary for this release.
+- Trade-off: isolated targets cannot make legitimate outbound calls. An authenticated allowlisted egress proxy is future work and must not be implied by this profile.
+- Source: implemented under the user's competition-readiness direction after the senior security audit.

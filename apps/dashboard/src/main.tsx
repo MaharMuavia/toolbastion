@@ -1,5 +1,9 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource/josefin-sans/400.css";
+import "@fontsource/josefin-sans/500.css";
+import "@fontsource/josefin-sans/600.css";
+import "@fontsource/josefin-sans/700.css";
 import "./styles.css";
 
 type Event = {
@@ -28,16 +32,108 @@ type SessionSummary = Pick<Session, "sessionId" | "label">;
 type PolicyDetail = { yaml: string; valid: boolean; mode: string };
 type Scenario = { id: string; title: string; category: string; expected: string; actual?: string; summary: string };
 type ScenarioResult = { scenarioId: string; expected: string; actual: string; matched: boolean; summary: string };
+type IconName = "activity" | "download" | "flask" | "overview" | "policy" | "shield" | "timeline";
+type View = "landing" | "console";
+
+const consoleHashes = new Set(["#console", "#overview", "#timeline", "#attack-lab", "#policy", "#reports"]);
 
 function snapshotUrl(file: string): string {
   return new URL(`snapshot/${file}`, document.baseURI).toString();
 }
 
-function Metric({ label, value, note }: { label: string; value: string | number; note: string }) {
-  return <article className="metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></article>;
+function Icon({ name }: { name: IconName }) {
+  const common = { fill: "none", stroke: "currentColor", strokeLinecap: "round" as const, strokeLinejoin: "round" as const, strokeWidth: 1.8 };
+  if (name === "shield") return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><path d="M12 3 19 6v5c0 4.4-2.9 8.2-7 10-4.1-1.8-7-5.6-7-10V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>;
+  if (name === "overview") return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>;
+  if (name === "timeline") return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><path d="M4 6h16M4 12h10M4 18h16" /><circle cx="17" cy="12" r="2" /></svg>;
+  if (name === "flask") return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><path d="M9 3h6M10 3v6l-5.6 8.1A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.1-3.9L14 9V3" /><path d="M8 15h8" /></svg>;
+  if (name === "policy") return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><path d="M7 3h8l3 3v15H7z" /><path d="M15 3v4h4M10 12h5M10 16h5" /></svg>;
+  if (name === "download") return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><path d="M12 3v12M8 11l4 4 4-4M5 21h14" /></svg>;
+  return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><path d="M4 12h3l2-6 4 12 2-6h5" /></svg>;
+}
+
+function Metric({ icon, label, note, tone, value }: { icon: IconName; label: string; value: string | number; note: string; tone: string }) {
+  return <article className={`metric ${tone}`}>
+    <span className="metric-icon"><Icon name={icon} /></span>
+    <div><span className="metric-label">{label}</span><strong>{value}</strong><small>{note}</small></div>
+  </article>;
+}
+
+function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
+  return <main className="landing" id="top">
+    <header className="landing-header">
+      <a className="brand landing-brand" href="#top" aria-label="ToolBastion home"><div className="mark"><Icon name="shield" /></div><div><strong>ToolBastion</strong><span>MCP security gateway</span></div></a>
+      <nav className="landing-nav" aria-label="Product navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#proof">Proof</a>
+        <a href="#demo-path">Demo path</a>
+      </nav>
+      <button className="header-console-button" type="button" onClick={onOpenConsole}>Open security console</button>
+    </header>
+
+    <section className="landing-hero" aria-labelledby="landing-title">
+      <div className="landing-copy">
+        <p className="eyebrow">ZERO-TRUST MCP ENFORCEMENT</p>
+        <h1 id="landing-title">Secure MCP tools<br /><span>before they execute.</span></h1>
+        <p className="landing-lede">ToolBastion is the enforcement boundary between an AI agent and its tools. It validates every call, blocks deterministic threats, isolates targets, and records redacted evidence.</p>
+        <div className="landing-actions">
+          <button className="primary-action" type="button" onClick={onOpenConsole}>Launch the security console <span aria-hidden="true">→</span></button>
+          <a className="secondary-action" href="#proof">See the proof</a>
+        </div>
+        <ul className="trust-points" aria-label="Core security capabilities">
+          <li><span><Icon name="shield" /></span>Pre-execution enforcement</li>
+          <li><span><Icon name="policy" /></span>Validated policy boundaries</li>
+          <li><span><Icon name="timeline" /></span>Redacted audit evidence</li>
+        </ul>
+      </div>
+      <div className="landing-visual" aria-label="Every MCP tool call passes through ToolBastion before reaching its target">
+        <div className="visual-grid"></div>
+        <div className="visual-caption"><span className="live-dot"></span> Enforcement path</div>
+        <div className="flow-node agent-node"><small>01</small><strong>AI agent</strong><span>Tool call request</span></div>
+        <div className="flow-line flow-line-one"></div>
+        <div className="flow-node bastion-node"><div className="mini-mark"><Icon name="shield" /></div><small>02</small><strong>ToolBastion</strong><span>Inspect and decide</span></div>
+        <div className="security-layers"><span>Policy</span><span>Trust</span><span>Output</span><span>Audit</span></div>
+        <div className="flow-line flow-line-two"></div>
+        <div className="flow-node target-node"><small>03</small><strong>MCP target</strong><span>Only safe execution</span></div>
+        <p className="visual-note">A tool call is never allowed to bypass the enforcement path.</p>
+      </div>
+    </section>
+
+    <section className="landing-section how-it-works" id="how-it-works" aria-labelledby="how-it-works-title">
+      <div><p className="eyebrow">HOW IT WORKS</p><h2 id="how-it-works-title">One boundary. Four security stages.</h2></div>
+      <div className="stage-grid">
+        <article><span>01</span><h3>Validate</h3><p>Tool schemas, arguments, metadata, and configuration are treated as untrusted input.</p></article>
+        <article><span>02</span><h3>Decide</h3><p>Deterministic rules stop known-dangerous requests before a model or target can act.</p></article>
+        <article><span>03</span><h3>Contain</h3><p>Docker targets run without network access and with a reduced execution surface.</p></article>
+        <article><span>04</span><h3>Prove</h3><p>Audit artifacts are redacted and tamper-evident so a decision can be inspected later.</p></article>
+      </div>
+    </section>
+
+    <section className="proof-section" id="proof" aria-labelledby="proof-title">
+      <div className="proof-copy"><p className="eyebrow">VERIFIABLE, NOT THEATRICAL</p><h2 id="proof-title">A demo should show what is actually enforced.</h2><p>The console uses local runtime evidence when the API is available and switches to clearly-labelled recorded fixtures when it is not. The security path itself does not depend on the dashboard.</p><a href="#demo-path">Follow the demo path <span aria-hidden="true">↓</span></a></div>
+      <div className="proof-cards">
+        <article><span className="proof-icon"><Icon name="shield" /></span><p>Hard deny</p><strong>Before execution</strong><small>Deterministic blocks cannot be overridden by a model.</small></article>
+        <article><span className="proof-icon"><Icon name="activity" /></span><p>Target isolation</p><strong>Network disabled</strong><small>Docker targets have no default egress path.</small></article>
+        <article><span className="proof-icon"><Icon name="timeline" /></span><p>Audit evidence</p><strong>Secrets redacted</strong><small>Reports preserve decisions without persisting raw credentials.</small></article>
+      </div>
+    </section>
+
+    <section className="demo-path" id="demo-path" aria-labelledby="demo-path-title">
+      <div className="demo-path-intro"><p className="eyebrow">RECORDING RUNBOOK</p><h2 id="demo-path-title">A three-minute demo path.</h2><p>Use this page to establish the architecture, then open the console to show real enforcement evidence.</p></div>
+      <ol>
+        <li><span>01</span><div><strong>Set the boundary</strong><p>Show the agent-to-target path and why ToolBastion sits in the middle.</p></div></li>
+        <li><span>02</span><div><strong>Open the security console</strong><p>Point out the session status, policy limits, and independent enforcement path.</p></div></li>
+        <li><span>03</span><div><strong>Run Attack Lab</strong><p>Replay controlled threats and download the resulting redacted evidence.</p></div></li>
+      </ol>
+      <button className="primary-action demo-console-button" type="button" onClick={onOpenConsole}>Start the live demo <span aria-hidden="true">→</span></button>
+    </section>
+
+    <footer className="landing-footer"><span>ToolBastion v0.1.0</span><span>Enforcement runs independently from this interface.</span><a href="https://github.com/MaharMuavia/toolbastion" target="_blank" rel="noreferrer">View source</a></footer>
+  </main>;
 }
 
 function App() {
+  const [view, setView] = useState<View>(() => consoleHashes.has(window.location.hash) ? "console" : "landing");
   const [session, setSession] = useState<Session | null>(null);
   const [selected, setSelected] = useState<Event | null>(null);
   const [error, setError] = useState("");
@@ -46,7 +142,31 @@ function App() {
   const [labResult, setLabResult] = useState<ScenarioResult | null>(null);
   const [labBusy, setLabBusy] = useState("");
   const [readOnly, setReadOnly] = useState(false);
+
+  const openConsole = () => {
+    window.location.hash = "console";
+    setView("console");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const openLanding = () => {
+    window.history.pushState(null, "", `${window.location.pathname}${window.location.search}`);
+    setView("landing");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   useEffect(() => {
+    const syncView = () => setView(consoleHashes.has(window.location.hash) ? "console" : "landing");
+    window.addEventListener("hashchange", syncView);
+    window.addEventListener("popstate", syncView);
+    return () => {
+      window.removeEventListener("hashchange", syncView);
+      window.removeEventListener("popstate", syncView);
+    };
+  }, []);
+  useEffect(() => { document.title = view === "console" ? "ToolBastion Security Console" : "ToolBastion | Secure MCP tooling"; }, [view]);
+  useEffect(() => {
+    if (view !== "console") return;
+    let mounted = true;
     const load = async () => {
       try {
         const listResponse = await fetch("/api/sessions");
@@ -57,7 +177,7 @@ function App() {
         const response = await fetch(`/api/sessions/${encodeURIComponent(active.sessionId)}`);
         if (!response.ok) throw new Error("Active session is unavailable");
         const value = await response.json() as Session;
-        setSession(value); setSelected(value.events.at(-1) ?? null);
+        if (mounted) { setSession(value); setSelected(value.events.at(-1) ?? null); }
       } catch {
         try {
           const response = await fetch(snapshotUrl("session.json"));
@@ -65,14 +185,15 @@ function App() {
           const value = await response.json() as Session;
           const decisions = value.events.filter((event) => event.decision);
           value.metrics = { totalToolCalls: decisions.length, allows: decisions.filter((event) => event.decision === "ALLOW").length, blocks: decisions.filter((event) => event.decision === "BLOCK").length, askUser: decisions.filter((event) => event.decision === "ASK_USER").length, quarantines: decisions.filter((event) => event.decision === "QUARANTINE").length, deterministicResolutionRate: 1, judgeEscalationRate: 0, judgeTokens: 0, cacheHitRate: 0 };
-          setReadOnly(true); setSession(value); setSelected(value.events.at(-1) ?? null);
-        } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to load session"); }
+          if (mounted) { setReadOnly(true); setSession(value); setSelected(value.events.at(-1) ?? null); }
+        } catch (reason) { if (mounted) setError(reason instanceof Error ? reason.message : "Unable to load session"); }
       }
     };
     void load();
-  }, []);
+    return () => { mounted = false; };
+  }, [view]);
   useEffect(() => {
-    if (!session || session.label !== "LIVE LOCAL SESSION") return;
+    if (view !== "console" || !session || session.label !== "LIVE LOCAL SESSION") return;
     const refresh = async () => {
       try {
         const response = await fetch(`/api/sessions/${encodeURIComponent(session.sessionId)}`);
@@ -84,12 +205,16 @@ function App() {
     };
     const timer = window.setInterval(() => { void refresh(); }, 1_000);
     return () => window.clearInterval(timer);
-  }, [session?.label, session?.sessionId]);
-  useEffect(() => { fetch("/api/policy").then((response) => response.ok ? response.json() as Promise<PolicyDetail> : null).then(setPolicy).catch(() => setPolicy(null)); }, []);
+  }, [session?.label, session?.sessionId, view]);
   useEffect(() => {
+    if (view !== "console") return;
+    fetch("/api/policy").then((response) => response.ok ? response.json() as Promise<PolicyDetail> : null).then(setPolicy).catch(() => setPolicy(null));
+  }, [view]);
+  useEffect(() => {
+    if (view !== "console") return;
     fetch("/api/demo/scenarios").then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<Scenario[]>; }).then(setScenarios)
       .catch(() => { fetch(snapshotUrl("scenarios.json")).then((response) => response.json() as Promise<Scenario[]>).then(setScenarios).catch(() => setScenarios([])); });
-  }, []);
+  }, [view]);
   const latestCritical = useMemo<Event | undefined>(() => session?.events.filter((event) => event.riskLevel === "critical").at(-1), [session]);
 
   async function runScenario(scenario: Scenario): Promise<void> {
@@ -105,29 +230,42 @@ function App() {
     finally { setLabBusy(""); }
   }
 
-  if (error) return <main className="center"><section className="empty"><p className="eyebrow">CONNECTION ERROR</p><h1>Security data is unavailable</h1><p>{error}. Start the localhost API and refresh.</p></section></main>;
+  if (view === "landing") return <Landing onOpenConsole={openConsole} />;
+  if (error) return <main className="center"><section className="empty"><p className="eyebrow">CONNECTION ERROR</p><h1>Security data is unavailable</h1><p>{error}. Start the localhost API and refresh.</p><button className="text-action" type="button" onClick={openLanding}>Back to product overview</button></section></main>;
   if (!session) return <main className="center"><p className="loading">Loading verified session…</p></main>;
 
   const recorded = readOnly || session.label === "OFFLINE FIXTURE REPLAY";
 
   return <div className="shell">
-    <aside>
-      <div className="brand"><div className="mark">TB</div><div><strong>ToolBastion</strong><span>Security console</span></div></div>
-      <nav aria-label="Primary"><a className="active" href="#overview">Overview</a><a href="#timeline">Session timeline</a><a href="#attack-lab">Attack Lab</a><a href="#policy">Policy</a><a href="#reports">Reports</a></nav>
-      <div className={`connection ${recorded ? "recorded" : ""}`}><i></i><span>{recorded ? "Recorded enforcement session" : "Local enforcement online"}</span><small>{recorded ? "Verified fixture · no live target" : "127.0.0.1 only"}</small></div>
+    <aside className="sidebar">
+      <div>
+        <div className="brand"><div className="mark"><Icon name="shield" /></div><div><strong>ToolBastion</strong><span>Security console</span></div></div>
+        <p className="sidebar-kicker">Runtime security</p>
+        <nav aria-label="Primary">
+          <a className="active" href="#overview"><Icon name="overview" /><span>Overview</span></a>
+          <a href="#timeline"><Icon name="timeline" /><span>Session timeline</span></a>
+          <a href="#attack-lab"><Icon name="flask" /><span>Attack Lab</span></a>
+          <a href="#policy"><Icon name="policy" /><span>Policy</span></a>
+          <a href="#reports"><Icon name="download" /><span>Reports</span></a>
+        </nav>
+      </div>
+      <div className="sidebar-bottom">
+        <div className={`connection ${recorded ? "recorded" : ""}`}><i></i><span>{recorded ? "Recorded enforcement session" : "Local enforcement online"}</span><small>{recorded ? "Verified fixture · no live target" : "127.0.0.1 only"}</small></div>
+        <p>Enforcement runs independently from this dashboard.</p>
+      </div>
     </aside>
-    <main>
-      <header><div><p className="eyebrow">PROTECTED SESSION</p><h1>Runtime overview</h1><p className="subtitle">{recorded ? session.staticLabel ?? "Verified recorded evidence. No live target is connected." : "One target. Every call inspected before execution."}</p></div><div className="header-actions"><span className="badge">{readOnly ? "READ-ONLY SNAPSHOT" : session.label}</span><span className="mode">{session.mode}</span></div></header>
+    <main className="dashboard-main">
+      <header className="dashboard-header"><div><p className="eyebrow">PROTECTED SESSION</p><h1>Runtime overview</h1><p className="subtitle">{recorded ? session.staticLabel ?? "Verified recorded evidence. No live target is connected." : "One target. Every call inspected before execution."}</p></div><div className="header-actions"><button className="dashboard-return" type="button" onClick={openLanding}>Product overview</button><span className="badge">{readOnly ? "READ-ONLY SNAPSHOT" : session.label}</span><span className="mode"><Icon name="activity" />{session.mode}</span></div></header>
       <section className="metrics" id="overview">
-        <Metric label="Tool calls" value={session.metrics.totalToolCalls} note={`${session.targetName} target`} />
-        <Metric label="Deterministic" value={`${Math.round(session.metrics.deterministicResolutionRate * 100)}%`} note="Resolved without GPT" />
-        <Metric label="Blocked" value={session.metrics.blocks} note="Stopped pre-execution" />
-        <Metric label="Judge tokens" value={session.metrics.judgeTokens} note={recorded ? "Recorded replay usage" : "Current live session"} />
+        <Metric icon="activity" tone="blue" label="Tool calls" value={session.metrics.totalToolCalls} note={`${session.targetName} target`} />
+        <Metric icon="overview" tone="mint" label="Deterministic" value={`${Math.round(session.metrics.deterministicResolutionRate * 100)}%`} note="Resolved without GPT" />
+        <Metric icon="shield" tone="amber" label="Blocked" value={session.metrics.blocks} note="Stopped pre-execution" />
+        <Metric icon="flask" tone="violet" label="Judge tokens" value={session.metrics.judgeTokens} note={recorded ? "Recorded replay usage" : "Current live session"} />
       </section>
       {latestCritical && <section className="alert"><span className="risk-dot critical"></span><div><p className="eyebrow">LATEST CRITICAL EVENT</p><strong>{latestCritical.summary}</strong></div><button onClick={() => setSelected(latestCritical)}>Inspect event</button></section>}
       <section className="attack-lab panel" id="attack-lab">
         <div className="panel-head"><div><p className="eyebrow">ATTACK LAB</p><h2>Recorded scenario explorer</h2></div><span className="badge">{scenarios.length} FIXTURES</span></div>
-        <div className="lab-grid"><div className="scenario-list">{scenarios.map((scenario) => <button key={scenario.id} disabled={labBusy.length > 0} onClick={() => void runScenario(scenario)}><span>{scenario.category}</span><strong>{scenario.title}</strong><small>Expected: {scenario.expected}{labBusy === scenario.id ? " · running…" : ""}</small></button>)}</div>
+        <div className="lab-grid"><div className="scenario-list">{scenarios.map((scenario) => <button key={scenario.id} className={labResult?.scenarioId === scenario.id ? "selected" : ""} disabled={labBusy.length > 0} aria-pressed={labResult?.scenarioId === scenario.id} onClick={() => void runScenario(scenario)}><span>{scenario.category}</span><strong>{scenario.title}</strong><small>Expected: {scenario.expected}{labBusy === scenario.id ? " · running…" : ""}</small></button>)}</div>
           <div className="lab-result">{labResult ? <><p className="eyebrow">ACTUAL RESULT</p><strong className={labResult.matched ? "matched" : "mismatch"}>{labResult.actual}</strong><p>{labResult.summary}</p><small>Expected {labResult.expected} · {labResult.matched ? "matched" : "mismatch"}</small></> : <><p className="eyebrow">EXPECTED BEFORE EXECUTION</p><h3>Select a controlled scenario</h3><p>The expected result is shown on every card. The recorded or local actual result appears here afterward.</p></>}</div></div>
       </section>
       <section className="workspace" id="timeline">
@@ -142,14 +280,14 @@ function App() {
       </section>
       <section className="policy-panel panel" id="policy">
         <div className="panel-head"><div><p className="eyebrow">POLICY DETAIL</p><h2>Active enforcement boundaries</h2></div><span className={`decision ${policy?.valid ? "allow" : "ask_user"}`}>{policy?.valid ? "VALID" : "UNAVAILABLE"}</span></div>
-        <div className="policy-body"><div><label>Runtime mode<strong>{policy?.mode ?? session.mode}</strong></label><label>Output firewall<strong>Secrets redacted · injections quarantined</strong></label><label>Audit storage<strong>Redacted JSONL · SHA-256 hash chain</strong></label><label>Remediation<strong>Read-only proposal · explicit apply</strong></label></div><pre>{policy?.yaml ?? "Policy source is not exposed in this fixture-only view."}</pre></div>
+        <div className="policy-body"><div><label>Runtime mode<strong>{policy?.mode ?? session.mode}</strong></label><label>Output firewall<strong>Secrets redacted · injections quarantined</strong></label><label>Audit storage<strong>Redacted JSONL · sealed SHA-256 chain</strong></label><label>Remediation<strong>Structured exact-host proposal · explicit apply</strong></label></div><pre>{policy?.yaml ?? "Policy source is not exposed in this fixture-only view."}</pre></div>
       </section>
       <section className="downloads panel" id="reports"><div className="panel-head"><div><p className="eyebrow">VERIFIED ARTIFACTS</p><h2>Download reports</h2></div></div><div>{[
         ["Markdown report", readOnly ? snapshotUrl("report.md") : `/api/sessions/${session.sessionId}/report?format=markdown`],
         ["JSON report", readOnly ? snapshotUrl("report.json") : `/api/sessions/${session.sessionId}/report?format=json`],
         ["Redacted audit JSONL", readOnly ? snapshotUrl("audit.jsonl") : `/api/sessions/${session.sessionId}/audit`],
         ["Evaluation summary", readOnly ? snapshotUrl("evaluation-summary.json") : "/api/evaluation"]
-      ].map(([label, href]) => <a key={label} href={href} download>{label}<span>↓</span></a>)}</div></section>
+      ].map(([label, href]) => <a key={label} href={href} download>{label}<span><Icon name="download" /></span></a>)}</div></section>
       <footer><span>ToolBastion v0.1.0</span><span>Dashboard is outside the enforcement path</span></footer>
     </main>
   </div>;

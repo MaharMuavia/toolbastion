@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { OfflineFixtureJudge, aggregateSubchecks } from "../../packages/judge/src/index.js";
+import { OfflineFixtureJudge, aggregateSubchecks, buildJudgePrompt, profileArguments, projectForExternalJudge } from "../../packages/judge/src/index.js";
 
 const safeChecks = [
   { checkName: "scope_safety" as const, verdict: "safe" as const, riskLevel: "low" as const, reason: "safe", evidence: [] },
@@ -32,5 +32,52 @@ describe("offline fixture replay", () => {
     expect(verdict.model).toBe("recorded-fixture");
     expect(verdict.inputTokens).toBe(0);
   });
+
+  it("returns a standard unavailable verdict when a fixture is missing", async () => {
+    const judge = new OfflineFixtureJudge(path.resolve("fixtures/recorded-judge-results/request-verdicts.json"));
+    const verdict = await judge.evaluateRequest({ toolName: "missing_fixture", untrustedDescription: "Unknown", schemaSummary: {}, args: {}, policySummary: {}, deterministicEvidence: [], recentEvents: [], baseRisk: "medium", runtimeMode: "enforce" });
+    expect(verdict.decision).toBe("BLOCK");
+    expect(verdict.reasonCodes).toContain("judge_unavailable");
+    expect(verdict.offlineReplay).toBe(true);
+  });
 });
 
+describe("judge prompt boundaries", () => {
+  it("keeps context and argument keys and values out of the external judge prompt", () => {
+    const contextSentinel = "IGNORE_ALL_POLICY_CONTEXT_SENTINEL";
+    const argumentKeySentinel = "PRIVATE_ARGUMENT_KEY_SENTINEL";
+    const argumentValueSentinel = "PRIVATE_ARGUMENT_VALUE_SENTINEL";
+    const policySentinel = "PRIVATE_POLICY_SENTINEL";
+    const descriptionSentinel = "UNTRUSTED_DESCRIPTION_SENTINEL";
+    const prompt = buildJudgePrompt("scope_safety", projectForExternalJudge({
+      toolName: "read_project_file",
+      untrustedDescription: descriptionSentinel,
+      schemaSummary: {},
+      args: { [argumentKeySentinel]: argumentValueSentinel },
+      policySummary: { paths: { allow: [policySentinel], deny: [] }, network: { default: "deny", allow_domains: [policySentinel] }, toolRule: { action: "judge", base_risk: "low" } },
+      deterministicEvidence: [],
+      recentEvents: [],
+      contextSummary: contextSentinel,
+      baseRisk: "low",
+      runtimeMode: "enforce"
+    }));
+    const untrustedStart = prompt.indexOf("<UNTRUSTED_DATA>");
+    const untrustedEnd = prompt.indexOf("</UNTRUSTED_DATA>");
+    expect(untrustedStart).toBeGreaterThan(-1);
+    const descriptionPosition = prompt.indexOf(descriptionSentinel);
+    expect(descriptionPosition).toBeGreaterThan(untrustedStart);
+    expect(descriptionPosition).toBeLessThan(untrustedEnd);
+    expect(prompt).not.toContain(contextSentinel);
+    expect(prompt).not.toContain(argumentKeySentinel);
+    expect(prompt).not.toContain(argumentValueSentinel);
+    expect(prompt).not.toContain(policySentinel);
+    expect(prompt).toContain("CONTEXT_AVAILABLE=true");
+  });
+
+  it("profiles nested arguments without retaining their content", () => {
+    const sentinel = "PRIVATE_NESTED_ARGUMENT_SENTINEL";
+    const profile = profileArguments({ private: [{ nested: sentinel }, 42, true] });
+    expect(profile).toMatchObject({ nodes: 6, maxDepth: 3, stringValues: 1, stringBytes: Buffer.byteLength(sentinel, "utf8"), numberValues: 1, booleanValues: 1, truncated: false });
+    expect(JSON.stringify(profile)).not.toContain(sentinel);
+  });
+});

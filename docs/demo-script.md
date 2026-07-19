@@ -16,15 +16,15 @@ Show: Agent → ToolBastion → target, with audit/dashboard outside the enforce
 
 ## 0:30–0:55 — Safe operation
 
-Show a prepared terminal running `npm run demo:offline`. This is the product's real keyless MCP proof, not Vitest output. Highlight the safe target execution and the evidence directory.
+Show a prepared terminal running `npm run demo:offline`. This is the product's real keyless MCP proof, not Vitest output. Highlight the direct controlled canary/loopback-collector baseline, then the protected safe read, unchanged delivery count, unchanged collector count, and evidence directory.
 
 Say: “Safe in-scope work is forwarded quickly. Deterministic policy resolves it without spending GPT tokens.”
 
 ## 0:55–1:25 — Real attack
 
-Show the terminal's `Renamed-field traversal` result and unchanged target execution counter, then show the corresponding recorded Path Traversal card and critical timeline event in Attack Lab.
+Show the terminal's `Protected path traversal`, `Protected undeclared argument`, and `Protected loopback exfiltration` results. Each must show its unchanged target execution/delivery counter; the loopback row must also show the collector attempt count unchanged. Then show the corresponding recorded Path Traversal card and critical timeline event in Attack Lab.
 
-Say: “This traversal is blocked before target execution. The integration scenario checks the vulnerable server’s execution counter, proving the tool body was never entered.”
+Say: "This traversal is blocked before target execution. The loopback delivery is also blocked before the target body runs: the target delivery counter and local collector both remain unchanged."
 
 ## 1:25–1:45 — MCP-specific attack
 
@@ -48,7 +48,7 @@ Say: “Only ambiguous calls use GPT-5.6. Scope, exfiltration and tool-integrity
 
 Show a schema-validated `NO_CHANGE` or proposal record and the explicit apply command requiring `--yes`.
 
-Say: “Codex receives redacted evidence in a read-only process. ToolBastion dry-runs every proposal and never auto-applies policy.”
+Say: “Codex receives only a safe metadata summary in an empty read-only workspace. Local code derives and verifies the one permitted host exception; ToolBastion never auto-applies policy.”
 
 ## 2:40–2:50 — Close
 

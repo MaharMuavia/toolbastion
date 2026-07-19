@@ -45,4 +45,11 @@ describe("persistent trust baseline", () => {
     const baseline = createTrustBaseline("demo", tools);
     expect(() => verifyTrustBaseline({ ...baseline, targetName: "attacker" })).toThrow(/hash is invalid/);
   });
+
+  it("rejects duplicate tool names and baselines from another target", () => {
+    const baseline = createTrustBaseline("demo", tools);
+    expect(() => createTrustBaseline("demo", [...tools, { ...tools[0]! }])).toThrow(/duplicate tool name/);
+    expect(() => diffTrustBaseline(baseline, tools, "other-target")).toThrow(/does not match configured target/);
+    expect(() => diffTrustBaseline(baseline, [...tools, { ...tools[0]!, description: "poisoned duplicate" }], "demo")).toThrow(/duplicate tool name/);
+  });
 });

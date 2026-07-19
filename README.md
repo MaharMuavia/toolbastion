@@ -22,16 +22,16 @@
 
 ![ToolBastion security console showing blocked MCP attacks](docs/screenshots/dashboard-overview.png)
 
-ToolBastion is an MCP server to the coding agent and an MCP client to one local stdio target. It verifies tool metadata, applies deterministic policy before execution, sends only genuinely ambiguous calls to three structured GPT-5.6 checks, inspects returned content, and writes a redacted tamper-evident audit trail. Clear violations are blocked before the target tool body runs.
+ToolBastion is an MCP server to the coding agent and an MCP client to one local stdio target. It verifies tool metadata and advertised input contracts, applies deterministic policy before execution, sends only genuinely ambiguous calls to three structured GPT-5.6 checks, inspects returned content, and writes a redacted tamper-evident audit trail. In `enforce` and `interactive` modes, clear violations, unknown tools, invalid tool arguments, and unapproved metadata are blocked before the target tool body runs; `shadow` records the same decisions while forwarding for evaluation.
 
 Release: `v0.1.0` · Category: Developer Tools · License: Apache-2.0
 
 > [!IMPORTANT]
-> Deterministic hard denies always win. GPT-5.6 is consulted only for genuinely ambiguous calls, and model failure closes the gate in enforce mode.
+> In `enforce` and `interactive` modes, deterministic hard denies always win. GPT-5.6 is consulted only for genuinely ambiguous calls, and model failure closes the gate in enforce mode. `shadow` deliberately forwards recorded would-be decisions for evaluation.
 
 ## Run the keyless demo
 
-Requirements: Node.js 20+ (22 tested), npm, and Git. No OpenAI key is needed.
+Requirements: Node.js 22.12.0 or newer, npm, and Git. No OpenAI key is needed.
 
 ```powershell
 # From an extracted or cloned ToolBastion source checkout:
@@ -43,11 +43,30 @@ npm.cmd run demo:offline
 node .\apps\cli\dist\index.js dashboard --config .\toolbastion.config.example.yaml
 ```
 
-`demo:offline` is a real MCP execution proof, not a test-suite alias. It starts the deliberately vulnerable target behind ToolBastion, forwards a safe call, attacks generic and nested argument fields, verifies the target execution counter, exercises output quarantine/redaction, and validates the resulting audit chain. Evidence is retained under the ignored `.toolbastion/demo/` directory unless `toolbastion demo --cleanup` is used.
+`demo:offline` is a real MCP execution proof, not a test-suite alias. First, a deliberately vulnerable target reads a generated synthetic canary outside its project and delivers that marker only to a temporary `127.0.0.1` collector. The same target is then run behind ToolBastion: an in-scope file read succeeds, while a traversal, an undeclared schema field, and a loopback exfiltration attempt leave the relevant target counters and collector count unchanged. The demo also exercises output quarantine/redaction and verifies the sealed audit chain. The raw canary is never printed or retained; `proof.json` contains only its hash, counts, decisions, and audit result. Evidence is retained under the ignored `.toolbastion/demo/` directory unless `toolbastion demo --cleanup` is used.
 
 Open `http://127.0.0.1:4782` for the separately labelled `OFFLINE FIXTURE REPLAY` dashboard and recorded Attack Lab.
 
 On macOS/Linux, use `npm` and `/` path separators. See [supported platforms](docs/supported-platforms.md) for exact status.
+
+## Local development
+
+Start the connected web development stack with one command:
+
+```powershell
+npm.cmd run dev
+```
+
+It performs an initial workspace build, starts the Fastify API at `http://127.0.0.1:4782`, starts the Vite frontend at `http://127.0.0.1:5173`, and proxies frontend `/api` requests to the API. Open `http://127.0.0.1:5173`; press `Ctrl+C` in that terminal to stop both services. Frontend changes use Vite hot reload. Backend, proxy, and package changes require a restart so the workspace build can regenerate their ESM output.
+
+The MCP proxy is deliberately separate because it owns stdin/stdout for the MCP client. In a second terminal, create the local trust baseline once, then start the proxy:
+
+```powershell
+node .\apps\cli\dist\index.js trust create --config .\toolbastion.config.example.yaml
+npm.cmd run dev:proxy
+```
+
+Point an MCP-capable client at `npm.cmd run dev:proxy`; do not run it in the same terminal as the browser stack. To use another policy file, set `TOOLBASTION_DEV_CONFIG` before `npm.cmd run dev`.
 
 ## Prebuilt judge experience
 
@@ -58,7 +77,7 @@ docker compose -f docker-compose.judge.yml pull
 docker compose -f docker-compose.judge.yml up
 ```
 
-Open `http://127.0.0.1:4782`. The container binds only to localhost, runs as non-root with a read-only filesystem and `no-new-privileges`, and serves the recorded snapshot.
+Open `http://127.0.0.1:4782`. Compose publishes the container only on localhost; inside its network namespace the dashboard listens on all interfaces. It runs as non-root with a read-only filesystem and `no-new-privileges`, and serves the recorded snapshot.
 
 ## How it works
 
@@ -67,7 +86,7 @@ flowchart LR
   A["Coding agent"] -->|"MCP stdio calls"| W["ToolBastion"]
   W --> T["Trust baseline"]
   W --> D["Deterministic policy + detectors"]
-  D -->|"clear deny"| B["BLOCK before execution"]
+  D -->|"clear deny in enforce / interactive"| B["BLOCK before execution"]
   D -->|"ambiguous only"| G["GPT-5.6 structured subchecks"]
   G --> E["Deterministic aggregation"]
   E -->|"allowed"| M["Target MCP server"]
@@ -85,7 +104,7 @@ The API and dashboard are never in the enforcement path. They display a verified
 1. ToolBastion verifies that the target tool still matches its approved trust baseline.
 2. Policy and content detectors resolve clear allows and hard denies locally.
 3. Only ambiguous calls may reach three bounded GPT-5.6 structured checks.
-4. The target runs only after approval; its output then crosses a second firewall.
+4. In `enforce` and `interactive` modes, the target runs only after a deterministic or semantic `ALLOW`; `ASK_USER` never forwards a call. `shadow` records the would-be decision and forwards for evaluation.
 5. A recursively redacted event is appended to the tamper-evident audit chain.
 
 </details>
@@ -94,16 +113,19 @@ The API and dashboard are never in the enforcement path. They display a verified
 
 Request decisions are `ALLOW`, `ASK_USER`, or `BLOCK`. Output decisions are `PASS`, `REDACT`, or `QUARANTINE`.
 
-In interactive mode, clients advertising MCP form elicitation receive an approve-once/deny prompt for ambiguous calls. Approval is audited and never cached as a reusable allow; clients without elicitation support receive the explicit `ASK_USER` response.
+Interactive mode returns an explicit `ASK_USER` result for ambiguous calls and never trusts an approval supplied by the coding agent itself. An independently authenticated operator-approval channel is required before approval can become a forwarding capability.
 
 - Persistent trust detects added, removed, schema-changed, description-changed, and poisoned tools.
+- In `enforce` and `interactive` modes, calls to tool names absent from the current approved inventory are denied, even if a target accepts hidden methods; `shadow` records the untrusted-tool decision and forwards.
+- Before policy or forwarding, arguments must validate against the approved tool's JSON Schema Draft 2020-12 contract; malformed or unsupported contracts fail closed outside `shadow`.
 - Tool-list change notifications trigger baseline revalidation and exact-call cache invalidation.
 - Deterministic detectors use both field semantics and hostile content signatures, covering traversal/symlink escape, secret paths, shell metacharacters, destructive commands, SSRF/private endpoints, suspicious protocols, and misleading generic argument fields.
-- Target subprocesses inherit only the MCP SDK safe baseline plus explicitly named `env_allowlist` entries.
+- Target subprocesses inherit only the MCP SDK safe baseline plus explicitly named `env_allowlist` entries, have a bounded MCP request deadline, and have stderr drained without persistence.
+- In enforce mode, recognized network-, shell-, and command-capable target calls are blocked by default. The only opt-in is `network.target_egress: isolated`, which requires ToolBastion to launch the target in a pinned Docker image with no network namespace; it does not accept an unverified external-egress assertion.
 - Hard denies cannot be overridden by GPT-5.6.
-- Output inspection redacts credential-like values and quarantines returned prompt injection or suspicious URLs.
+- Enforce mode requires output inspection, credential redaction, prompt-injection quarantine, and untrusted-URL quarantine; payload depth, nodes, and bytes are bounded.
 - Enforce mode fails closed if required policy, trust, audit, or semantic judgment is unavailable.
-- Remediation is a read-only, schema-validated Codex proposal; ToolBastion never auto-applies it.
+- Remediation is a read-only, schema-validated Codex proposal; ToolBastion never auto-applies it. Proposal artifacts are HMAC-signed with an operator-held environment secret and are re-verified before application.
 
 ## Exactly where GPT-5.6 is used
 
@@ -113,9 +135,9 @@ GPT-5.6 is not a general controller. After deterministic checks, an ambiguous ca
 2. exfiltration risk;
 3. tool integrity.
 
-TypeScript validates each result with Zod and aggregates it deterministically. Model output cannot weaken policy or override a hard deny. Timeouts, malformed output, unavailable credentials, and call-limit exhaustion are safe failures. The recorded replay is clearly labeled and performs no network call. Live mode is optional:
+TypeScript validates each result with Zod and aggregates it deterministically. Model output cannot weaken policy or override a hard deny. Timeouts, malformed output, unavailable credentials, and call-limit exhaustion are safe failures. The recorded replay is clearly labeled, performs no network call, and is rejected in enforce mode. Live mode is optional:
 
-An optional `judge.context_file` may provide bounded local intent (8 KiB by default). ToolBastion rejects paths outside `project_root`, redacts credential-like content before judgment, labels missing context as unavailable, and includes the redacted context hash in the exact-call cache key.
+An optional `judge.context_file` may provide bounded local intent (8 KiB by default). ToolBastion rejects paths outside `project_root`, keeps context text, argument keys/values, and policy details on the local machine, and sends a bounded structural argument profile, policy counts/enums, and a context-available flag to a live judge. It includes the locally redacted context hash in the exact-call cache key.
 
 ```powershell
 node --env-file=.env.local .\scripts\judge-smoke.mjs
@@ -125,7 +147,7 @@ Live acceptance is currently deferred because the selected OpenAI project return
 
 ## Exactly how Codex was used
 
-Codex accelerated the workspace architecture, proxy, detectors, attack corpus, tests, dashboard, container, and release workflows in the primary project task. At runtime, ToolBastion can invoke real `codex exec` in a read-only sandbox with redacted evidence and a strict output schema. A proposal is temporarily verified against schema, security invariants, and regression tests, then requires explicit human review and `--yes` before application.
+Codex accelerated the workspace architecture, proxy, detectors, attack corpus, tests, dashboard, container, and release workflows in the primary project task. At runtime, ToolBastion can invoke real `codex exec` in an empty temporary read-only workspace with a strict output schema. It receives only an argument hash, requested outcome, mechanical-eligibility flag, and bounded detector categories/severities—never raw arguments, policy YAML, or a model-authored patch. Local code derives the sole allowed operation (one exact public HTTP(S) host), verifies it against invariants and attack fixtures, and requires explicit human review, the matching replay `--args-file`, and `--yes` before application.
 
 The full record is in [Codex collaboration](docs/codex-collaboration.md), [human decisions](docs/human-decisions.md), and [engineering decisions](DECISIONS.md).
 
@@ -139,23 +161,67 @@ toolbastion run --config <file>
 toolbastion dashboard --config <file>
 toolbastion audit verify <session-id> --config <file>
 toolbastion report <session-id> --format json|markdown --config <file>
-toolbastion remediation propose <session-id> <event-id> --expected <outcome> --config <file>
-toolbastion remediation inspect|reject|apply <proposal-id> --config <file>
+toolbastion remediation propose <session-id> <event-id> --expected <outcome> --args-file <original-args.json> --config <file>
+toolbastion remediation inspect|reject <proposal-id> --config <file>
+toolbastion remediation apply <proposal-id> --args-file <original-args.json> --yes --config <file>
 toolbastion demo [--cleanup]
 ```
 
+Set `TOOLBASTION_REMEDIATION_HMAC_KEY` to a unique secret of at least 32 bytes before using any remediation command. Keep it outside the repository and do not pass it to the target or Codex subprocess.
+
 The proxy speaks MCP JSON-RPC on stdout. Human diagnostics and lifecycle events use stderr only.
+
+## Live enforce setup
+
+The checked-in example is a deny-by-default enforce policy. Create and inspect a trust baseline before starting a live target:
+
+```powershell
+node .\apps\cli\dist\index.js trust create --config .\toolbastion.config.example.yaml
+node .\apps\cli\dist\index.js trust inspect --config .\toolbastion.config.example.yaml
+node .\apps\cli\dist\index.js run --config .\toolbastion.config.example.yaml
+```
+
+The dashboard binds only to localhost by default. A non-local bind needs the explicit `dashboard --expose` acknowledgement and should be protected by a network boundary and authentication layer.
+
+## Isolated target setup
+
+For a target that must execute potentially network-capable MCP tools, use the Docker isolation profile. It fails closed before target startup unless Docker is reachable and the configured immutable image is already available locally. The container is started with `--network=none`, a read-only root filesystem and project mount, all Linux capabilities dropped, `no-new-privileges`, a non-root UID, a bounded tmpfs, and PID/memory/CPU limits. It cannot make DNS or TCP connections, including to host loopback.
+
+Build the supplied probe image (it contains only Node; the read-only project mount provides the compiled server and dependencies), then paste the resulting immutable image ID into the policy:
+
+```powershell
+$imageId = docker build -q -f .\examples\vulnerable-server\Dockerfile.isolated .
+$env:TOOLBASTION_DOCKER_TEST_IMAGE = $imageId
+npm.cmd run test:docker-isolation
+```
+
+```yaml
+target:
+  name: isolated-demo
+  command: node
+  args: ["./examples/benign-server/dist/index.js"]
+  cwd: .
+  env_allowlist: []
+  isolation:
+    provider: docker
+    image: sha256:replace-with-the-64-hex-image-id-from-docker-build
+    user: "1000:1000"
+network:
+  target_egress: isolated
+```
+
+Only immutable `sha256:<image-id>` or registry `image@sha256:<digest>` values are accepted, Docker is invoked with `--pull=never`, and target command/argument paths must be container-relative. The default `blocked` mode remains appropriate when no target-side network behavior is needed.
 
 ## Audit verification
 
-Audit JSONL is recursively redacted before persistence. Each canonical event includes its sequence, previous hash, and SHA-256 event hash.
+Audit JSONL is recursively redacted before persistence; raw `args` and `arguments` are always omitted and replaced with SHA-256 correlation hashes. A valid v2 session has one exclusive start record, contiguous canonical events for one session, and a terminal seal binding the final event hash. Each event includes its sequence, previous hash, and SHA-256 event hash.
 
 ```powershell
 node .\apps\cli\dist\index.js audit verify <session-id> --config .\toolbastion.config.example.yaml
 node .\apps\cli\dist\index.js report <session-id> --format markdown --config .\toolbastion.config.example.yaml
 ```
 
-The snapshot's downloadable `audit.jsonl`, JSON/Markdown reports, and evaluation summary are also available from the dashboard. The chain is tamper-evident, not a signature or external attestation.
+The snapshot's downloadable `audit.jsonl`, JSON/Markdown reports, and evaluation summary are also available from the dashboard. `verify:snapshot` verifies the sealed audit, the session-to-audit correspondence, regenerated reports, scenarios, and a fully passing fixture summary. The chain is tamper-evident, not a signature or external attestation.
 
 Verify the committed judge snapshot directly after building:
 
@@ -171,8 +237,7 @@ npm.cmd run typecheck
 npm.cmd test
 npm.cmd run test:integration
 npm.cmd run test:e2e
-npm.cmd run build
-npm.cmd run evaluate
+npm.cmd run artifact:prepare
 npm.cmd audit --audit-level=high
 ```
 
@@ -191,8 +256,8 @@ The corpus covers path traversal, symlink escape, secret-file access, shell inje
 
 - v1 protects exactly one local stdio target per ToolBastion process; remote MCP transports are out of scope.
 - ToolBastion is not an operating-system sandbox. A malicious target can act at startup or outside a mediated tool call.
-- DNS rebinding defense is incomplete without resolution pinning.
-- Audit hashes do not prevent replacement of an entire chain and its unanchored trust source.
+- ToolBastion validates URL, host, address, IP, port, loopback, private, link-local, metadata, and IPv4-mapped IPv6 inputs before forwarding, but it is not a general network firewall. Enforce mode blocks recognized network/shell target behavior by default; `target_egress: isolated` is a Docker `--network=none` profile, not a routing proxy for permitted egress.
+- Audit hashes do not prevent replacement of an entire chain and its unanchored trust source; unsalted argument hashes are correlation identifiers, not protection for low-entropy secrets.
 - Offline fixture metrics measure implemented decisions, not production prevalence or live GPT-5.6 quality.
 - macOS and ARM are not release-certified yet.
 - The public demo video and `/feedback` Session ID remain owner-submission actions; they are never fabricated by the project.
@@ -206,7 +271,7 @@ The corpus covers path traversal, symlink escape, secret-file access, shell inje
 - [Submission checklist](SUBMISSION_CHECKLIST.md)
 - [`/feedback` session record](docs/feedback-session.md) — **not yet recorded; human action required**
 
-GitHub Actions validates pushes, deploys the read-only snapshot to Pages, and publishes release archives/checksums plus `linux/amd64` GHCR images from `v*` tags.
+GitHub Actions validates pushes, regenerates and checks the committed read-only snapshot, deploys it to Pages, and publishes tagged source archives/checksums plus `linux/amd64` GHCR images from `v*` tags.
 
 ## License
 

@@ -10,8 +10,9 @@
 | API and React dashboard | Complete | API integration tests, Playwright tests, screenshots | None |
 | Vulnerable demo and fixtures | Complete | `examples/vulnerable-server`, attack/benign/evaluation fixtures | None |
 | Automated tests | Complete for local release | unit, integration, E2E, process cleanup, error handling | Rerun in hosted CI after push |
-| Offline keyless demo | Complete | `npm run demo:offline`, read-only snapshot/container | None |
-| Audit integrity | Complete | `npm run verify:snapshot`, CLI `audit verify` | None |
+| Offline keyless demo | Complete | `npm run demo:offline`: direct synthetic-canary/loopback control, protected non-execution counters, sealed proof | None |
+| Target-side network containment | Locally verified; hosted verification pending | Docker no-network target profile, local host-collector proof, unit construction checks, GitHub Actions gate | Verify the configured CI gate after push |
+| Audit tamper evidence | Complete for v2 start/event/seal logs | `npm run verify:snapshot`, CLI `audit verify` | Use an external signing or attestation service if non-repudiation is required; whole-chain replacement remains out of scope |
 | Documentation and threat model | Complete | README, architecture, evaluation, security assumptions | None |
 | Codex/human decision record | Complete | `docs/codex-collaboration.md`, `docs/human-decisions.md`, `DECISIONS.md` | Add feedback ID |
 | Screenshots | Complete | `docs/screenshots` from real Playwright session | Final privacy inspection before upload |

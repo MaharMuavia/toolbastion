@@ -5,6 +5,7 @@ import {
   canonicalJson,
   deterministicResultSchema,
   sha256,
+  TOOLBASTION_VERSION,
   type DeterministicResult,
   type RequestDecision,
   type RuntimeMode,
@@ -87,11 +88,20 @@ export type TrustBaseline = z.infer<typeof trustBaselineSchema>;
 
 type ListedTool = { name: string; description?: string | undefined; inputSchema: Record<string, unknown> };
 
+function assertUniqueToolNames(tools: Array<{ name: string }>, label: string): void {
+  const names = new Set<string>();
+  for (const tool of tools) {
+    if (names.has(tool.name)) throw new Error(`${label} contains duplicate tool name: ${tool.name}`);
+    names.add(tool.name);
+  }
+}
+
 function metadataPoisoned(description: string): boolean {
   return /ignore (?:all |any )?(?:previous|prior|system)|(?:read|send|upload).*(?:credential|\.env|secret)|contact external|bypass.*(?:policy|rule)/i.test(description);
 }
 
 export function createTrustBaseline(targetName: string, tools: ListedTool[], now = new Date()): TrustBaseline {
+  assertUniqueToolNames(tools, "Current tool inventory");
   const normalizedTools = tools.map((tool) => {
     const description = tool.description ?? "";
     return {
@@ -103,12 +113,13 @@ export function createTrustBaseline(targetName: string, tools: ListedTool[], now
       riskClassification: metadataPoisoned(description) ? "critical" : "unclassified"
     };
   }).sort((left, right) => left.name.localeCompare(right.name));
-  const unsigned = { version: 1 as const, targetName, toolbastionVersion: "0.1.0", createdAt: now.toISOString(), tools: normalizedTools };
+  const unsigned = { version: 1 as const, targetName, toolbastionVersion: TOOLBASTION_VERSION, createdAt: now.toISOString(), tools: normalizedTools };
   return { ...unsigned, baselineHash: sha256(unsigned) };
 }
 
 export function verifyTrustBaseline(input: unknown): TrustBaseline {
   const baseline = trustBaselineSchema.parse(input);
+  assertUniqueToolNames(baseline.tools, "Trust baseline");
   const { baselineHash, ...unsigned } = baseline;
   if (sha256(unsigned) !== baselineHash) throw new Error("Trust baseline hash is invalid; the file may have been edited");
   return baseline;
@@ -123,8 +134,12 @@ export type TrustDiff = {
   unchanged: string[];
 };
 
-export function diffTrustBaseline(baseline: TrustBaseline, tools: ListedTool[]): TrustDiff {
+export function diffTrustBaseline(baseline: TrustBaseline, tools: ListedTool[], expectedTargetName?: string): TrustDiff {
   verifyTrustBaseline(baseline);
+  if (expectedTargetName !== undefined && baseline.targetName !== expectedTargetName) {
+    throw new Error(`Trust baseline target does not match configured target: ${baseline.targetName}`);
+  }
+  assertUniqueToolNames(tools, "Current tool inventory");
   const current = new Map(createTrustBaseline(baseline.targetName, tools).tools.map((tool) => [tool.name, tool]));
   const approved = new Map(baseline.tools.map((tool) => [tool.name, tool]));
   const result: TrustDiff = { added: [], removed: [], schemaChanged: [], descriptionChanged: [], poisoned: [], unchanged: [] };

@@ -11,9 +11,12 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
@@ -26,8 +29,14 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run test:integration
+      - name: Verify target Docker network isolation
+        shell: bash
+        run: |
+          image_id="$(docker build -q -f examples/vulnerable-server/Dockerfile.isolated .)"
+          TOOLBASTION_DOCKER_TEST_IMAGE="${image_id}" npm run test:docker-isolation
       - run: npm run test:e2e
-      - run: npm run evaluate
+      - run: npm run artifact:prepare
+      - run: git diff --exit-code -- apps/dashboard/public/snapshot
       - run: npm audit --audit-level=high
       - name: Secret scan
         shell: bash

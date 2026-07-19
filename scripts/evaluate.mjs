@@ -49,7 +49,6 @@ function unavailableChecks(reason) {
 }
 
 for (const fixture of fixtures) {
-  const started = performance.now();
   let requestDecision = null;
   let outputDecision = null;
   let evidence = [];
@@ -87,14 +86,13 @@ for (const fixture of fixtures) {
   const required = fixture.requiredEvidence.every((value) => evidence.includes(value));
   const expectedOutputDecision = fixture.kind === "output" ? (fixture.expectedOutputDecision ?? null) : null;
   const passed = requestDecision === (fixture.expectedRequestDecision ?? null) && outputDecision === expectedOutputDecision && required;
-  results.push({ id: fixture.id, title: fixture.title, category: fixture.category, attack: fixture.attack, passed, requestDecision, outputDecision, evidence, latencyMs: Number((performance.now() - started).toFixed(3)) });
+  results.push({ id: fixture.id, title: fixture.title, category: fixture.category, attack: fixture.attack, passed, requestDecision, outputDecision, evidence });
 }
 
 const attacks = results.filter((item) => item.attack);
 const benignResults = results.filter((item) => !item.attack);
 const passed = results.filter((item) => item.passed).length;
 const summary = {
-  generatedAt: new Date().toISOString(),
   mode: "offline-fixture-evaluation",
   totalFixtures: results.length,
   passedFixtures: passed,
@@ -103,7 +101,6 @@ const summary = {
   falsePositiveRate: benignResults.length === 0 ? 0 : benignResults.filter((item) => !item.passed).length / benignResults.length,
   deterministicResolutionRate: deterministic / results.length,
   gptEscalationRate: escalated / results.length,
-  averageDecisionLatencyMs: results.reduce((sum, item) => sum + item.latencyMs, 0) / results.length,
   cacheHitRate: 0,
   outputRedactionAccuracy: outputCases === 0 ? 0 : correctOutputCases / outputCases,
   limitations: ["Trust metadata cases use deterministic baseline assertions rather than launching a mutable target.", "Cache hit rate is zero because the corpus intentionally evaluates unique calls.", "GPT failure fixtures exercise deterministic failure aggregation without network access."],

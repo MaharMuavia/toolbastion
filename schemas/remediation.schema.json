@@ -1,12 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "required": ["action", "unifiedDiff", "reasoning", "expectedOutcome"],
-  "properties": {
-    "action": { "enum": ["PATCH", "NO_CHANGE"] },
-    "unifiedDiff": { "type": ["string", "null"] },
-    "reasoning": { "type": "string", "minLength": 1 },
-    "expectedOutcome": { "enum": ["allow_legitimate_call", "keep_attack_blocked"] }
-  },
-  "additionalProperties": false
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["action", "reasoning", "expectedOutcome"],
+      "properties": {
+        "action": { "const": "ADD_EXACT_REQUEST_HOST" },
+        "reasoning": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "expectedOutcome": { "const": "allow_legitimate_call" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["action", "reasoning", "expectedOutcome"],
+      "properties": {
+        "action": { "const": "NO_CHANGE" },
+        "reasoning": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "expectedOutcome": { "const": "keep_attack_blocked" }
+      },
+      "additionalProperties": false
+    }
+  ]
 }

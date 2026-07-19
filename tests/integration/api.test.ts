@@ -1,7 +1,7 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createApi } from "../../apps/api/src/index.js";
+import { createApi, startApi } from "../../apps/api/src/index.js";
 
 const root = path.resolve(".");
 const app = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath: path.join(root, ".test-tmp", "missing-runtime-events.jsonl"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
@@ -11,7 +11,10 @@ afterAll(async () => app.close());
 
 describe("dashboard API", () => {
   it("serves health and a completed fixture session", async () => {
-    expect((await app.inject({ method: "GET", url: "/api/health" })).json()).toEqual({ status: "ok" });
+    const health = await app.inject({ method: "GET", url: "/api/health" });
+    expect(health.json()).toEqual({ status: "ok" });
+    expect(health.headers["content-security-policy"]).toContain("default-src 'self'");
+    expect(health.headers["x-content-type-options"]).toBe("nosniff");
     const response = await app.inject({ method: "GET", url: "/api/sessions/offline-day3-demo" });
     expect(response.statusCode).toBe(200);
     const body = response.json<{ label: string; metrics: { blocks: number } }>();
@@ -19,10 +22,14 @@ describe("dashboard API", () => {
     expect(body.metrics.blocks).toBe(2);
   });
 
+  it("requires explicit acknowledgement before a non-localhost bind", async () => {
+    await expect(startApi({ rootDir: root }, 4782, "0.0.0.0")).rejects.toThrow(/--expose acknowledgement/);
+  });
+
   it("serves the production dashboard from the localhost API", async () => {
     const response = await app.inject({ method: "GET", url: "/" });
     expect(response.statusCode).toBe(200);
-    expect(response.body).toContain("ToolBastion Security Console");
+    expect(response.body).toContain("ToolBastion | Secure MCP tooling");
   });
 
   it("validates policy YAML without writing it", async () => {
@@ -75,6 +82,39 @@ describe("dashboard API", () => {
       await writeFile(eventLogPath, `${closed.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
       const fallback = (await liveApp.inject({ method: "GET", url: "/api/sessions" })).json<Array<{ label: string }>>();
       expect(fallback[0]?.label).toBe("OFFLINE FIXTURE REPLAY");
+    } finally {
+      await liveApp.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not serve a live audit or report through an escaped audit-directory symlink", async () => {
+    const directory = path.join(root, ".test-tmp", `api-audit-confinement-${crypto.randomUUID()}`);
+    const projectRoot = path.join(directory, "project");
+    const outsideDirectory = path.join(directory, "outside");
+    const eventLogPath = path.join(directory, "runtime-events.jsonl");
+    const configPath = path.join(directory, "toolbastion.config.json");
+    await mkdir(projectRoot, { recursive: true });
+    await mkdir(outsideDirectory, { recursive: true });
+    await writeFile(path.join(outsideDirectory, "live-session-1.jsonl"), "outside-only-secret\n", "utf8");
+    await symlink(outsideDirectory, path.join(projectRoot, "linked-audit"), process.platform === "win32" ? "junction" : "dir");
+    await writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "shadow",
+      project_root: projectRoot,
+      target: { name: "live-target", command: process.execPath, args: [], env_allowlist: [] },
+      audit: { directory: "linked-audit" }
+    }), "utf8");
+    const timestamp = new Date().toISOString();
+    await writeFile(eventLogPath, `${JSON.stringify({ eventId: "audit-live-1", timestamp, eventType: "session_started", payload: { sessionId: "live-session-1" } })}\n${JSON.stringify({ eventId: "audit-live-2", timestamp, eventType: "target_connected", payload: { targetName: "live-target" } })}\n`, "utf8");
+    const liveApp = await createApi({ rootDir: root, configPath, eventLogPath });
+    try {
+      await liveApp.ready();
+      for (const url of ["/api/sessions/live-session-1/audit", "/api/sessions/live-session-1/report?format=json"]) {
+        const response = await liveApp.inject({ method: "GET", url });
+        expect(response.statusCode).toBe(409);
+        expect(response.body).not.toContain("outside-only-secret");
+      }
     } finally {
       await liveApp.close();
       await rm(directory, { recursive: true, force: true });

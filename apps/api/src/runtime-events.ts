@@ -29,10 +29,9 @@ function summary(eventType: string, payload: Record<string, unknown>): string {
     tools_changed: "Target reported a tool-list change",
     trust_verified: payload.approved === true ? "Tool metadata matches the approved baseline" : "Tool metadata requires approval",
     policy_evaluated: `${toolName ?? "Tool call"} evaluated${decision ? `: ${decision}` : ""}`,
-    approval_requested: `${toolName ?? "Tool call"} is waiting for one-time user approval`,
-    approval_resolved: `${toolName ?? "Tool call"} approval resolved${stringValue(payload.resolution) ? `: ${stringValue(payload.resolution)}` : ""}`,
     call_blocked: `${toolName ?? "Tool call"} stopped before execution${reason ? `: ${reason}` : ""}`,
     tool_forwarded: `${toolName ?? "Tool call"} forwarded to the protected target`,
+    target_call_failed: `${toolName ?? "Target tool"} failed or exceeded its deadline`,
     output_inspected: `${toolName ?? "Tool output"} inspected${decision ? `: ${decision}` : ""}`,
     audit_failed: "Audit persistence failed; enforce mode fails closed",
     target_closed: "Protected MCP target closed"
@@ -70,7 +69,7 @@ export async function loadRuntimeSession(filePath: string, fallbackTargetName: s
       const deterministicRisk = riskLevelSchema.safeParse(deterministic.riskLevel);
       const judgeRisk = riskLevelSchema.safeParse(judge.riskLevel);
       let decision: string | undefined;
-      if (event.eventType === "call_blocked") decision = event.payload.reason === "user_approval_required" ? "ASK_USER" : "BLOCK";
+      if (event.eventType === "call_blocked") decision = event.payload.reason === "operator_approval_required" ? "ASK_USER" : "BLOCK";
       if (event.eventType === "output_inspected") decision = event.payload.decision === "PASS" ? "ALLOW" : stringValue(event.payload.decision);
       const inputTokens = typeof judge.inputTokens === "number" ? judge.inputTokens : 0;
       const outputTokens = typeof judge.outputTokens === "number" ? judge.outputTokens : 0;

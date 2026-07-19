@@ -29,6 +29,18 @@ describe("path detector", () => {
     expect(result.reasonCodes).toContain(reason);
   });
 
+  it.each([".npmrc", ".netrc", ".pypirc", ".envrc", ".git-credentials", ".docker/config.json", ".kube/config", "gcloud/application_default_credentials.json", "state.tfstate", "certs/client.pem"])("hard-denies common credential material regardless of allow rules: %s", async (candidate) => {
+    const { envAllowlist, ...target } = config.target;
+    const permissive = toolbastionConfigSchema.parse({
+      ...config,
+      target: { ...target, env_allowlist: envAllowlist },
+      paths: { allow: ["./**"], deny: [] }
+    });
+    const result = await evaluateDeterministic("read_project_file", { path: candidate }, permissive);
+    expect(result.resolution).toBe("HARD_DENY");
+    expect(result.reasonCodes).toContain("sensitive_credential_path");
+  });
+
   it("allows a canonical in-project source path", async () => {
     const findings = await inspectArguments("read_project_file", { path: "packages/shared/src/index.ts" }, config);
     expect(findings).toEqual([]);
@@ -43,7 +55,8 @@ describe("path detector", () => {
     await mkdir(outside, { recursive: true });
     try {
       await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
-      const symlinkConfig = toolbastionConfigSchema.parse({ ...config, project_root: project, target: { ...config.target, env_allowlist: [] } });
+      const { envAllowlist, ...target } = config.target;
+      const symlinkConfig = toolbastionConfigSchema.parse({ ...config, project_root: project, target: { ...target, env_allowlist: envAllowlist } });
       const result = await evaluateDeterministic("read_project_file", { path: "escape/secret.txt" }, symlinkConfig);
       expect(result.reasonCodes).toContain("path_outside_project_root");
     } finally {
@@ -87,9 +100,13 @@ describe("schema-independent argument inspection", () => {
   it.each([
     [{ input: "../../.ssh/id_rsa" }, "path_outside_project_root"],
     [{ payload: "%2e%2e/%2e%2e/.env" }, "path_outside_project_root"],
+    [{ input: ".npmrc" }, "sensitive_credential_path"],
     [{ value: "http://127.0.0.1/admin" }, "loopback_destination"],
     [{ payload: "rm -rf ./" }, "destructive_command"],
-    [{ nested: [{ value: "powershell -EncodedCommand ZgBhAGsAZQA=" }] }, "encoded_powershell"]
+    [{ nested: [{ value: "powershell -EncodedCommand ZgBhAGsAZQA=" }] }, "encoded_powershell"],
+    [{ address: "169.254.169.254" }, "metadata_endpoint"],
+    [{ payload: "0.0.0.0" }, "private_ip_destination"],
+    [{ host: "[::ffff:10.0.0.1]" }, "embedded_private_ip"]
   ])("detects hostile content even when a target uses misleading field names", async (args, category) => {
     const findings = await inspectArguments("generic_action", args, config);
     expect(findings.map((item) => item.category)).toContain(category);
@@ -97,5 +114,68 @@ describe("schema-independent argument inspection", () => {
 
   it("does not treat ordinary text containing a slash as a path", async () => {
     expect(await inspectArguments("echo", { input: "release notes for design/engineering" }, config)).toEqual([]);
+  });
+
+  it("blocks traversal hidden inside a generic relative path", async () => {
+    const result = await evaluateDeterministic("read_project_file", { source: "workspace/../../outside.txt" }, config);
+    expect(result.resolution).toBe("HARD_DENY");
+    expect(result.reasonCodes).toContain("path_outside_project_root");
+  });
+
+  it("blocks a loopback URL embedded in an otherwise allowed shell command", async () => {
+    const { envAllowlist, ...target } = config.target;
+    const allowConfig = toolbastionConfigSchema.parse({ ...config, target: { ...target, env_allowlist: envAllowlist }, tools: { default: "allow", rules: {} } });
+    const result = await evaluateDeterministic("run_project_command", { command: "curl http://127.0.0.1/admin" }, allowConfig);
+    expect(result.resolution).toBe("HARD_DENY");
+    expect(result.reasonCodes).toContain("loopback_destination");
+  });
+
+  it("fails closed for target egress in enforce mode unless Docker network isolation is configured", async () => {
+    const { envAllowlist, ...target } = config.target;
+    const directConfig = toolbastionConfigSchema.parse({
+      ...config,
+      target: { ...target, env_allowlist: envAllowlist },
+      tools: { default: "allow", rules: {} }
+    });
+    const blocked = await evaluateDeterministic("fetch_url", { url: "https://api.github.com/repos" }, directConfig);
+    expect(blocked.resolution).toBe("HARD_DENY");
+    expect(blocked.reasonCodes).toContain("target_egress_not_isolated");
+
+    const guardedConfig = toolbastionConfigSchema.parse({
+      ...directConfig,
+      target: {
+        ...target,
+        env_allowlist: envAllowlist,
+        isolation: { provider: "docker", image: `registry.example/toolbastion-target@sha256:${"a".repeat(64)}` }
+      },
+      network: { ...directConfig.network, target_egress: "isolated" }
+    });
+    const guarded = await evaluateDeterministic("fetch_url", { url: "https://api.github.com/repos" }, guardedConfig);
+    expect(guarded.resolution).toBe("SAFE");
+  });
+
+  it("blocks bare resolver-magic hosts and shell destination overrides", async () => {
+    const { envAllowlist, ...target } = config.target;
+    const allowConfig = toolbastionConfigSchema.parse({
+      ...config,
+      target: {
+        ...target,
+        env_allowlist: envAllowlist,
+        isolation: { provider: "docker", image: `registry.example/toolbastion-target@sha256:${"b".repeat(64)}` }
+      },
+      network: { ...config.network, allow_domains: ["api.github.com"], target_egress: "isolated" },
+      tools: { default: "allow", rules: {} }
+    });
+    const bareHost = await evaluateDeterministic("fetch_blob", { value: "127.0.0.1.nip.io" }, allowConfig);
+    expect(bareHost.resolution).toBe("HARD_DENY");
+    expect(bareHost.reasonCodes).toContain("domain_not_allowlisted");
+
+    const override = await evaluateDeterministic("run_project_command", { command: "curl --resolve api.github.com:443:127.0.0.1 -k https://api.github.com/" }, allowConfig);
+    expect(override.resolution).toBe("HARD_DENY");
+    expect(override.reasonCodes).toContain("network_client_command");
+  });
+
+  it("does not mistake source-code text for a filesystem path", async () => {
+    expect(await inspectArguments("generic_action", { source: "const parent = \"../literal\";" }, config)).toEqual([]);
   });
 });

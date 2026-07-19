@@ -10,12 +10,14 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@toolbastion/audit": "0.1.0",
     "@toolbastion/judge": "0.1.0",
     "@toolbastion/output-firewall": "0.1.0",
     "@toolbastion/policy": "0.1.0",
     "@toolbastion/shared": "0.1.0",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "zod": "4.4.3"
   }
 }

@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
+import path from "node:path";
 import { z } from "zod";
+
+export const TOOLBASTION_VERSION = "0.1.0";
 
 export const runtimeModeSchema = z.enum(["shadow", "interactive", "enforce"]);
 export type RuntimeMode = z.infer<typeof runtimeModeSchema>;
@@ -66,70 +70,145 @@ export const auditEventSchema = z.object({
   sequence: z.number().int().positive(),
   eventId: z.string(),
   sessionId: z.string(),
-  timestamp: z.string(),
+  timestamp: z.string().datetime({ offset: true }),
   eventType: z.string(),
   payload: z.record(z.string(), z.unknown()),
   previousHash: z.string(),
   eventHash: z.string()
-});
+}).strict();
 export type AuditEvent = z.infer<typeof auditEventSchema>;
 
-export const remediationOutputSchema = z.object({
-  action: z.enum(["PATCH", "NO_CHANGE"]),
-  unifiedDiff: z.string().nullable(),
-  reasoning: z.string().min(1),
-  expectedOutcome: z.enum(["allow_legitimate_call", "keep_attack_blocked"])
-}).superRefine((value, context) => {
-  if (value.action === "PATCH" && !value.unifiedDiff) context.addIssue({ code: "custom", path: ["unifiedDiff"], message: "PATCH requires a unified diff" });
-  if (value.action === "NO_CHANGE" && value.unifiedDiff !== null) context.addIssue({ code: "custom", path: ["unifiedDiff"], message: "NO_CHANGE requires null" });
-});
+const remediationReasoningSchema = z.string().trim().min(1).max(4_000);
+
+export const remediationOutputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("ADD_EXACT_REQUEST_HOST"),
+    reasoning: remediationReasoningSchema,
+    expectedOutcome: z.literal("allow_legitimate_call")
+  }).strict(),
+  z.object({
+    action: z.literal("NO_CHANGE"),
+    reasoning: remediationReasoningSchema,
+    expectedOutcome: z.literal("keep_attack_blocked")
+  }).strict()
+]);
 export type RemediationOutput = z.infer<typeof remediationOutputSchema>;
 
-export const remediationProposalSchema = remediationOutputSchema.and(z.object({
+export const remediationOperationSchema = z.object({
+  kind: z.literal("add_exact_network_domain"),
+  domain: z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/)
+}).strict();
+export type RemediationOperation = z.infer<typeof remediationOperationSchema>;
+
+const remediationProposalFields = {
+  version: z.literal(2),
   proposalId: z.string(),
   blockedEventId: z.string(),
+  toolName: z.string().min(1),
+  decision: z.enum(["BLOCK", "ASK_USER"]),
+  argsHash: z.string().regex(/^[a-f0-9]{64}$/),
+  basePolicyHash: z.string().regex(/^[a-f0-9]{64}$/),
+  proposalHash: z.string().regex(/^[a-f0-9]{64}$/),
+  integrity: z.object({
+    algorithm: z.literal("hmac-sha256"),
+    keyId: z.literal("TOOLBASTION_REMEDIATION_HMAC_KEY"),
+    signature: z.string().regex(/^[a-f0-9]{64}$/)
+  }).strict(),
   verified: z.boolean(),
   verificationResults: z.array(z.string()),
   createdAt: z.string(),
   status: z.enum(["pending", "applied", "rejected"]),
   appliedBy: z.string().optional(),
   appliedAt: z.string().optional()
-}));
+};
+
+export const remediationProposalSchema = z.discriminatedUnion("action", [
+  z.object({
+    ...remediationProposalFields,
+    action: z.literal("ADD_EXACT_REQUEST_HOST"),
+    reasoning: remediationReasoningSchema,
+    expectedOutcome: z.literal("allow_legitimate_call"),
+    operation: remediationOperationSchema.nullable()
+  }).strict(),
+  z.object({
+    ...remediationProposalFields,
+    action: z.literal("NO_CHANGE"),
+    reasoning: remediationReasoningSchema,
+    expectedOutcome: z.literal("keep_attack_blocked"),
+    operation: z.null()
+  }).strict()
+]);
 export type RemediationProposal = z.infer<typeof remediationProposalSchema>;
+
+const dockerImageReferenceSchema = z.string().trim()
+  .regex(/^(?:sha256:[a-f0-9]{64}|[^\s@]+@sha256:[a-f0-9]{64})$/, "Docker isolation image must be pinned by immutable sha256 digest");
+
+const targetIsolationSchema = z.discriminatedUnion("provider", [
+  z.object({ provider: z.literal("none") }).strict(),
+  z.object({
+    provider: z.literal("docker"),
+    image: dockerImageReferenceSchema,
+    user: z.string().regex(/^[1-9][0-9]{0,9}:[1-9][0-9]{0,9}$/).default("1000:1000"),
+    memory_mb: z.number().int().min(128).max(4_096).default(512),
+    cpus: z.number().positive().max(4).default(1),
+    pids_limit: z.number().int().min(32).max(1_024).default(256),
+    tmpfs_size_mb: z.number().int().min(16).max(1_024).default(64)
+  }).strict()
+]).default({ provider: "none" });
 
 export const targetServerConfigSchema = z.object({
   name: z.string().trim().min(1),
   command: z.string().trim().min(1),
   args: z.array(z.string()).default([]),
   cwd: z.string().optional(),
-  env_allowlist: z.array(z.string()).default([])
-}).transform(({ env_allowlist, ...value }) => ({ ...value, envAllowlist: env_allowlist }));
+  env_allowlist: z.array(z.string()).default([]),
+  isolation: targetIsolationSchema
+}).strict().transform(({ env_allowlist, ...value }) => ({ ...value, envAllowlist: env_allowlist }));
 export type TargetServerConfig = z.output<typeof targetServerConfigSchema>;
+export type TargetServerConfigInput = z.input<typeof targetServerConfigSchema>;
 
 const pathPolicySchema = z.object({
   allow: z.array(z.string()).default(["./**"]),
   deny: z.array(z.string()).default([
     "**/.env", "**/.env.*", "**/.ssh/**", "**/.aws/**", "**/.azure/**",
-    "**/*credentials*", "**/*secret*", "**/id_rsa", "**/id_ed25519"
+    "**/.npmrc", "**/.netrc", "**/.pypirc", "**/.envrc", "**/.git-credentials",
+    "**/.docker/config.json", "**/.kube/config", "**/*credentials*", "**/*secret*",
+    "**/id_rsa", "**/id_ed25519", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.tfstate"
   ])
-}).prefault({});
+}).strict().prefault({});
+
+const networkDomainSchema = z.string().trim().toLowerCase()
+  .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/)
+  .refine((domain) => isIP(domain) === 0, "network allow_domains must contain DNS names, not IP literals")
+  .refine((domain) => !(
+    domain === "localhost"
+    || domain.endsWith(".localhost")
+    || domain.endsWith(".local")
+    || domain === "metadata.google.internal"
+    || domain === "nip.io"
+    || domain.endsWith(".nip.io")
+    || domain === "sslip.io"
+    || domain.endsWith(".sslip.io")
+    || domain === "localtest.me"
+    || domain.endsWith(".localtest.me")
+  ), "network allow_domains contains a localhost, metadata, or resolver-magic hostname");
 
 const networkPolicySchema = z.object({
   default: z.enum(["allow", "deny"]).default("deny"),
-  allow_domains: z.array(z.string().trim().min(1)).default([]),
+  allow_domains: z.array(networkDomainSchema).default([]),
   allow_subdomains: z.boolean().default(false),
   deny_private_ips: z.boolean().default(true),
   deny_loopback: z.boolean().default(true),
   deny_link_local: z.boolean().default(true),
   deny_metadata_endpoints: z.boolean().default(true),
-  follow_redirects: z.boolean().default(false),
-  allowed_ports: z.array(z.number().int().min(1).max(65535)).default([80, 443])
-}).prefault({});
+  allowed_ports: z.array(z.number().int().min(1).max(65535)).default([80, 443]),
+  target_egress: z.enum(["blocked", "isolated"]).default("blocked")
+}).strict().prefault({});
 
 const toolRuleSchema = z.object({
   base_risk: riskLevelSchema.default("medium"),
   action: z.enum(["allow", "allow_when_in_scope", "judge", "block"]).default("judge")
-});
+}).strict();
 
 const judgeSchema = z.object({
   enabled: z.boolean().default(true),
@@ -141,13 +220,25 @@ const judgeSchema = z.object({
   parallel_subchecks: z.boolean().default(true),
   context_file: z.string().optional(),
   context_max_bytes: z.number().int().positive().max(65_536).default(8_192),
-  fixture_file: z.string().default("./fixtures/recorded-judge-results/request-verdicts.json"),
-  failure_policy: z.object({
-    interactive: z.literal("ask_user").default("ask_user"),
-    enforce: z.literal("block").default("block"),
-    shadow: z.literal("allow_and_log").default("allow_and_log")
-  }).prefault({})
-}).prefault({});
+  fixture_file: z.string().default("./fixtures/recorded-judge-results/request-verdicts.json")
+}).strict().prefault({});
+
+const projectRelativeDirectorySchema = z.string().trim().min(1).refine((directory) => {
+  if (path.isAbsolute(directory)) return false;
+  return !directory.replaceAll("\\", "/").split("/").includes("..");
+}, "directory must be a relative path inside project_root");
+
+const limitSchema = z.object({
+  max_argument_bytes: z.number().int().positive().max(1_048_576).default(65_536),
+  max_argument_depth: z.number().int().min(1).max(128).default(32),
+  max_argument_nodes: z.number().int().positive().max(100_000).default(10_000),
+  max_output_bytes: z.number().int().positive().max(16_777_216).default(1_000_000),
+  max_output_depth: z.number().int().min(1).max(128).default(32),
+  max_output_nodes: z.number().int().positive().max(100_000).default(10_000),
+  max_tool_metadata_bytes: z.number().int().positive().max(1_048_576).default(65_536),
+  max_inflight_calls: z.number().int().positive().max(128).default(4),
+  tool_timeout_ms: z.number().int().positive().max(120_000).default(30_000)
+}).strict().prefault({});
 
 export const toolbastionConfigSchema = z.object({
   version: z.literal(1),
@@ -159,31 +250,60 @@ export const toolbastionConfigSchema = z.object({
   tools: z.object({
     default: z.enum(["allow", "judge", "block"]).default("judge"),
     rules: z.record(z.string(), toolRuleSchema).default({})
-  }).prefault({}),
+  }).strict().prefault({}),
   judge: judgeSchema,
   cache: z.object({
     enabled: z.boolean().default(true),
     ttl_seconds: z.number().int().positive().default(3600)
-  }).prefault({}),
+  }).strict().prefault({}),
+  limits: limitSchema,
   outputs: z.object({
     inspect: z.boolean().default(true),
     redact_secrets: z.boolean().default(true),
     quarantine_prompt_injection: z.boolean().default(true),
     quarantine_untrusted_urls: z.boolean().default(true)
-  }).prefault({}),
+  }).strict().prefault({}),
   audit: z.object({
-    directory: z.string().default("./.toolbastion/audit"),
-    redact_arguments: z.boolean().default(true),
-    hash_chain: z.boolean().default(true),
+    directory: projectRelativeDirectorySchema.default("./.toolbastion/audit"),
     retain_raw_content: z.literal(false).default(false)
-  }).prefault({}),
+  }).strict().prefault({}),
   remediation: z.object({
     enabled: z.boolean().default(false),
     auto_apply: z.literal(false).default(false),
     run_regression_suite: z.boolean().default(true),
     directory: z.string().default("./.toolbastion/remediation"),
     timeout_ms: z.number().int().positive().max(300_000).default(120_000)
-  }).prefault({})
+  }).strict().prefault({})
+}).strict().superRefine((config, context) => {
+  if (config.target.isolation.provider === "docker") {
+    if (config.target.cwd !== undefined && (path.isAbsolute(config.target.cwd) || config.target.cwd.replaceAll("\\", "/").split("/").includes(".."))) {
+      context.addIssue({ code: "custom", path: ["target", "cwd"], message: "Docker-isolated target cwd must be relative to project_root" });
+    }
+    if (path.isAbsolute(config.target.command)) {
+      context.addIssue({ code: "custom", path: ["target", "command"], message: "Docker-isolated target command must be available inside the pinned image" });
+    }
+    config.target.args.forEach((argument, index) => {
+      if (path.isAbsolute(argument)) {
+        context.addIssue({ code: "custom", path: ["target", "args", index], message: "Docker-isolated target arguments must use container-relative paths" });
+      }
+    });
+  }
+  if (config.mode !== "enforce") return;
+  if (config.network.default !== "deny") {
+    context.addIssue({ code: "custom", path: ["network", "default"], message: "enforce mode requires a deny-by-default network policy" });
+  }
+  for (const key of ["deny_private_ips", "deny_loopback", "deny_link_local", "deny_metadata_endpoints"] as const) {
+    if (!config.network[key]) context.addIssue({ code: "custom", path: ["network", key], message: "enforce mode requires this network protection" });
+  }
+  for (const key of ["inspect", "redact_secrets", "quarantine_prompt_injection", "quarantine_untrusted_urls"] as const) {
+    if (!config.outputs[key]) context.addIssue({ code: "custom", path: ["outputs", key], message: "enforce mode requires this output protection" });
+  }
+  if (config.judge.enabled && config.judge.mode === "offline") {
+    context.addIssue({ code: "custom", path: ["judge", "mode"], message: "offline judge replay is not permitted in enforce mode" });
+  }
+  if (config.network.target_egress === "isolated" && config.target.isolation.provider !== "docker") {
+    context.addIssue({ code: "custom", path: ["network", "target_egress"], message: "isolated target egress requires Docker target isolation" });
+  }
 });
 export type ToolBastionConfig = z.output<typeof toolbastionConfigSchema>;
 
