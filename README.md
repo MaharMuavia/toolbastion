@@ -140,10 +140,12 @@ TypeScript validates each result with Zod and aggregates it deterministically. M
 An optional `judge.context_file` may provide bounded local intent (8 KiB by default). ToolBastion rejects paths outside `project_root`, keeps context text, argument keys/values, and policy details on the local machine, and sends a bounded structural argument profile, policy counts/enums, and a context-available flag to a live judge. It includes the locally redacted context hash in the exact-call cache key.
 
 ```powershell
-node --env-file=.env.local .\scripts\judge-smoke.mjs
+node --env-file=.env.local .\scripts\judge-smoke.mjs --record
 ```
 
-Live acceptance is currently deferred because the selected OpenAI project returned account-inactive HTTP 429; no credential is stored in this repository. Details: [evaluation](docs/evaluation.md).
+`--record` writes `reports/live-judge-proof.json` only after a successful non-replay model response. The proof records the timestamp, model, `store: false` setting, three structured check outcomes, aggregate decision, latency, and token counts; it excludes API keys, raw prompts, raw arguments, policy text, and model rationale.
+
+A sanitized [live GPT-5.6 verification record](docs/live-gpt-5-6-verification.md) demonstrates all three structured checks, non-zero token usage, and `store: false`. It is integration evidence, not a claim of live-model accuracy; the deterministic corpus remains separately evaluated offline.
 
 ## Exactly how Codex was used
 

@@ -60,6 +60,64 @@ export interface JudgeProvider {
 const checkNames = ["scope_safety", "exfiltration_risk", "tool_integrity"] as const;
 const rank: Record<RiskLevel, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
+export const liveJudgeProofSchema = z.object({
+  version: z.literal(1),
+  capturedAt: z.string().datetime(),
+  provider: z.object({
+    name: z.literal("openai-responses"),
+    model: z.string().min(1),
+    responseStorage: z.literal(false)
+  }),
+  testCase: z.object({
+    id: z.string().min(1),
+    toolName: z.string().min(1),
+    runtimeMode: z.enum(["enforce", "interactive", "shadow"]),
+    baseRisk: z.enum(["none", "low", "medium", "high", "critical"])
+  }),
+  verdict: z.object({
+    decision: z.enum(["ALLOW", "BLOCK", "ASK_USER"]),
+    riskLevel: z.enum(["none", "low", "medium", "high", "critical"]),
+    latencyMs: z.number().nonnegative(),
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    checks: z.array(z.object({
+      checkName: z.enum(checkNames),
+      verdict: z.enum(["safe", "suspicious", "malicious", "unavailable"]),
+      riskLevel: z.enum(["none", "low", "medium", "high", "critical"])
+    })).length(checkNames.length)
+  })
+});
+
+export type LiveJudgeProof = z.infer<typeof liveJudgeProofSchema>;
+
+export function createLiveJudgeProof(input: {
+  capturedAt: string;
+  testCase: LiveJudgeProof["testCase"];
+  verdict: JudgeVerdict;
+}): LiveJudgeProof {
+  if (input.verdict.offlineReplay || input.verdict.model === "unavailable") {
+    throw new Error("A live judge proof requires a successful non-replay model response");
+  }
+  return liveJudgeProofSchema.parse({
+    version: 1,
+    capturedAt: input.capturedAt,
+    provider: { name: "openai-responses", model: input.verdict.model, responseStorage: false },
+    testCase: input.testCase,
+    verdict: {
+      decision: input.verdict.decision,
+      riskLevel: input.verdict.riskLevel,
+      latencyMs: input.verdict.latencyMs,
+      inputTokens: input.verdict.inputTokens,
+      outputTokens: input.verdict.outputTokens,
+      checks: input.verdict.subchecks.map((check) => ({
+        checkName: check.checkName,
+        verdict: check.verdict,
+        riskLevel: check.riskLevel
+      }))
+    }
+  });
+}
+
 function maxRisk(checks: JudgeSubcheck[]): RiskLevel {
   return checks.reduce<RiskLevel>((current, check) => (rank[check.riskLevel] ?? 0) > (rank[current] ?? 0) ? check.riskLevel : current, "none");
 }

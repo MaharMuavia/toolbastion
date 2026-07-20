@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { OfflineFixtureJudge, aggregateSubchecks, buildJudgePrompt, profileArguments, projectForExternalJudge } from "../../packages/judge/src/index.js";
+import { OfflineFixtureJudge, aggregateSubchecks, buildJudgePrompt, createLiveJudgeProof, profileArguments, projectForExternalJudge } from "../../packages/judge/src/index.js";
+import { judgeVerdictSchema } from "@toolbastion/shared";
 
 const safeChecks = [
   { checkName: "scope_safety" as const, verdict: "safe" as const, riskLevel: "low" as const, reason: "safe", evidence: [] },
@@ -20,6 +21,44 @@ describe("judge aggregation", () => {
   });
   it("allows when every check is safe", () => {
     expect(aggregateSubchecks(safeChecks, "enforce", "medium").decision).toBe("ALLOW");
+  });
+});
+
+describe("live judge proof", () => {
+  const liveVerdict = judgeVerdictSchema.parse({
+    decision: "ASK_USER",
+    riskLevel: "high",
+    reason: "The raw command is intentionally withheld from the external judge.",
+    reasonCodes: ["judge_unavailable"],
+    subchecks: [
+      { checkName: "scope_safety", verdict: "unavailable", riskLevel: "medium", reason: "private rationale", evidence: [] },
+      { checkName: "exfiltration_risk", verdict: "unavailable", riskLevel: "medium", reason: "private rationale", evidence: [] },
+      { checkName: "tool_integrity", verdict: "suspicious", riskLevel: "high", reason: "private rationale", evidence: [] }
+    ],
+    model: "gpt-5.6",
+    latencyMs: 123,
+    inputTokens: 456,
+    outputTokens: 78,
+    cached: false,
+    offlineReplay: false
+  });
+
+  it("records only safe live-response metadata", () => {
+    const proof = createLiveJudgeProof({
+      capturedAt: "2026-07-20T00:00:00.000Z",
+      testCase: { id: "proof", toolName: "run_project_command", runtimeMode: "interactive", baseRisk: "high" },
+      verdict: liveVerdict
+    });
+    expect(proof).toMatchObject({ provider: { model: "gpt-5.6", responseStorage: false }, verdict: { inputTokens: 456, outputTokens: 78 } });
+    expect(JSON.stringify(proof)).not.toContain("private rationale");
+  });
+
+  it("rejects recorded or unavailable judge responses", () => {
+    expect(() => createLiveJudgeProof({
+      capturedAt: "2026-07-20T00:00:00.000Z",
+      testCase: { id: "proof", toolName: "run_project_command", runtimeMode: "interactive", baseRisk: "high" },
+      verdict: { ...liveVerdict, model: "unavailable" }
+    })).toThrow("successful non-replay");
   });
 });
 

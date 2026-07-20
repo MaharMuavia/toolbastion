@@ -4,7 +4,7 @@
 | --- | --- | --- | --- |
 | Working MCP security proxy | Complete | `packages/core`, forwarding/enforcement integration tests | None |
 | Deterministic policy engine | Complete | `packages/policy`, `packages/detectors`, 40-case corpus | None |
-| GPT-5.6 integration | Implemented; live acceptance deferred | `packages/judge`, `scripts/judge-smoke.mjs` | Activate project billing and rerun live smoke |
+| GPT-5.6 integration | Live verified | `packages/judge`, `scripts/judge-smoke.mjs --record`, `reports/live-judge-proof.json` | Regenerate the sanitized proof immediately before recording the final demo |
 | Codex integration | Complete except feedback ID | `packages/remediation`, schema, real `codex exec` smoke | Run `/feedback` in primary task |
 | CLI | Complete for v1 | `apps/cli`, README command reference | None |
 | API and React dashboard | Complete | API integration tests, Playwright tests, screenshots | None |
