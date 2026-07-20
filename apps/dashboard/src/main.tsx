@@ -41,6 +41,10 @@ function snapshotUrl(file: string): string {
   return new URL(`snapshot/${file}`, document.baseURI).toString();
 }
 
+function isStaticPagesDeployment(): boolean {
+  return window.location.hostname.endsWith(".github.io");
+}
+
 function apiTokenFromFragment(): string | undefined {
   const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
   if (token === null) return undefined;
@@ -200,6 +204,10 @@ function App() {
   useEffect(() => { document.title = view === "console" ? "ToolBastion Security Console" : "ToolBastion | Secure MCP tooling"; }, [view]);
   useEffect(() => {
     if (view !== "console") return;
+    if (isStaticPagesDeployment()) {
+      void openSnapshot();
+      return;
+    }
     let mounted = true;
     const load = async () => {
       try {
