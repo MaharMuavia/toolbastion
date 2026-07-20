@@ -21,7 +21,7 @@ describe("path detector", () => {
     ["../../.ssh/id_rsa", "path_outside_project_root"],
     ["..\\..\\.aws\\credentials", "path_outside_project_root"],
     ["%2e%2e/%2e%2e/.env", "path_outside_project_root"],
-    ["C:\\Users\\victim\\.ssh\\id_rsa", process.platform === "win32" ? "path_outside_project_root" : "windows_absolute_path"],
+    ["C:\\Users\\victim\\.ssh\\id_rsa", "windows_absolute_path"],
     ["%USERPROFILE%\\.ssh\\id_rsa", "path_expansion_attempt"]
   ])("hard-denies %s", async (candidate, reason) => {
     const result = await evaluateDeterministic("read_project_file", { path: candidate }, config);

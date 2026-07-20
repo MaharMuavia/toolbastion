@@ -51,6 +51,7 @@
       "outputDecision": null,
       "evidence": [
         "sensitive_credential_path",
+        "windows_absolute_path",
         "path_outside_project_root"
       ]
     },
@@ -63,6 +64,7 @@
       "requestDecision": "BLOCK",
       "outputDecision": null,
       "evidence": [
+        "windows_absolute_path",
         "path_outside_project_root"
       ]
     },

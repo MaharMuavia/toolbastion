@@ -136,7 +136,7 @@ export async function inspectPath(value: string, fieldPath: string, config: Tool
   }
   const portable = decoded.replaceAll("\\", "/");
   if (/^(?:[a-zA-Z]:\/|\/\/)/.test(portable)) {
-    if (process.platform !== "win32") findings.push(evidence("path", "windows_absolute_path", "high", "Windows absolute or UNC syntax was detected on a non-Windows host", fieldPath));
+    findings.push(evidence("path", "windows_absolute_path", "high", "Windows absolute or UNC syntax was detected", fieldPath));
     findings.push(evidence("path", "path_outside_project_root", "critical", "Absolute or UNC path is outside the configured project scope", fieldPath));
     return findings;
   }
