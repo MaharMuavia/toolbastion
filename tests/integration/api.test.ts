@@ -30,12 +30,13 @@ describe("dashboard API", () => {
 
   it("requires a bearer token when API authentication is configured", async () => {
     const token = "a".repeat(32);
-    const protectedApp = await createApi({ rootDir: root, accessToken: token });
+    const protectedApp = await createApi({ rootDir: root, accessToken: token, dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
     try {
       await protectedApp.ready();
       expect((await protectedApp.inject({ method: "GET", url: "/api/health" })).statusCode).toBe(200);
       expect((await protectedApp.inject({ method: "GET", url: "/api/sessions" })).statusCode).toBe(401);
       expect((await protectedApp.inject({ method: "GET", url: "/api/sessions", headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200);
+      expect((await protectedApp.inject({ method: "GET", url: "/" })).statusCode).toBe(200);
     } finally { await protectedApp.close(); }
   });
 

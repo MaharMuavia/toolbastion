@@ -54,6 +54,8 @@ function apiFetch(url: string, token: string | undefined, init?: RequestInit): P
   return fetch(url, { ...init, headers });
 }
 
+function sessionFromSnapshot(value: Session): Session { return value; }
+
 function Icon({ name }: { name: IconName }) {
   const common = { fill: "none", stroke: "currentColor", strokeLinecap: "round" as const, strokeLinejoin: "round" as const, strokeWidth: 1.8 };
   if (name === "shield") return <svg viewBox="0 0 24 24" aria-hidden="true" {...common}><path d="M12 3 19 6v5c0 4.4-2.9 8.2-7 10-4.1-1.8-7-5.6-7-10V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>;
@@ -88,7 +90,7 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
       <div className="landing-copy">
         <p className="eyebrow">THE EXECUTION FIREWALL FOR MCP</p>
         <h1 id="landing-title">Make every MCP action<br /><span>earn execution.</span></h1>
-        <p className="landing-lede">ToolBastion turns an AI tool call into a verifiable decision. It validates the request, stops deterministic threats, confines the target, and creates a redacted security receipt.</p>
+        <p className="landing-lede">ToolBastion turns an AI tool call into a verifiable decision. It validates the request, stops deterministic threats, confines the target, and records redacted audit evidence.</p>
         <div className="landing-actions">
           <button className="primary-action" type="button" onClick={onOpenConsole}>Inspect a decision <span aria-hidden="true">→</span></button>
           <a className="secondary-action" href="#boundary">See the boundary</a>
@@ -96,7 +98,7 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
         <ul className="trust-points" aria-label="Core security capabilities">
           <li><span><Icon name="shield" /></span>Pre-execution enforcement</li>
           <li><span><Icon name="policy" /></span>Bounded tool access</li>
-          <li><span><Icon name="timeline" /></span>Inspectable receipts</li>
+          <li><span><Icon name="timeline" /></span>Inspectable audit records</li>
         </ul>
       </div>
       <div className="landing-visual" aria-label="Every MCP tool call passes through ToolBastion before reaching its target">
@@ -124,7 +126,7 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
     </section>
 
     <section className="proof-section" id="proof" aria-labelledby="proof-title">
-      <div className="proof-copy"><p className="eyebrow">VERIFIABLE, NOT THEATRICAL</p><h2 id="proof-title">Every decision leaves a security receipt.</h2><p>The console exposes local runtime evidence when available and clearly labels static snapshots when it is not. The enforcement path itself runs independently from this interface.</p><a href="#boundary">Explore the decision path <span aria-hidden="true">→</span></a></div>
+      <div className="proof-copy"><p className="eyebrow">VERIFIABLE, NOT THEATRICAL</p><h2 id="proof-title">Every decision leaves an audit record.</h2><p>The console exposes local runtime evidence when available and clearly labels static snapshots when it is not. The enforcement path itself runs independently from this interface.</p><a href="#boundary">Explore the decision path <span aria-hidden="true">→</span></a></div>
       <div className="proof-cards">
         <article><span className="proof-icon"><Icon name="shield" /></span><p>Hard deny</p><strong>Before execution</strong><small>Deterministic blocks cannot be overridden by a model.</small></article>
         <article><span className="proof-icon"><Icon name="activity" /></span><p>Target isolation</p><strong>No default egress</strong><small>Containerized targets can run without a network path.</small></article>
@@ -133,7 +135,7 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
     </section>
 
     <section className="boundary-section" id="boundary" aria-labelledby="boundary-title">
-      <div className="boundary-copy"><p className="eyebrow">THE BASTION DIFFERENCE</p><h2 id="boundary-title">Security receipts, not security theater.</h2><p>A raw tool request is not trusted because it came from an agent. ToolBastion captures the intent, applies layered controls, and records why the target did—or did not—receive the call.</p><button className="primary-action boundary-console-button" type="button" onClick={onOpenConsole}>Inspect the security console <span aria-hidden="true">→</span></button></div>
+      <div className="boundary-copy"><p className="eyebrow">THE BASTION DIFFERENCE</p><h2 id="boundary-title">Audit evidence, not security theater.</h2><p>A raw tool request is not trusted because it came from an agent. ToolBastion captures the intent, applies layered controls, and records why the target did—or did not—receive the call.</p><button className="primary-action boundary-console-button" type="button" onClick={onOpenConsole}>Inspect the security console <span aria-hidden="true">→</span></button></div>
       <div className="receipt-board" aria-label="A sample ToolBastion decision receipt">
         <div className="receipt-board-head"><span className="live-dot"></span><span>Decision receipt</span><small>event chain intact</small></div>
         <div className="receipt-steps">
@@ -149,11 +151,12 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
 }
 
 function App() {
-  const [view, setView] = useState<View>(() => consoleHashes.has(window.location.hash) ? "console" : "landing");
+  const [view, setView] = useState<View>(() => consoleHashes.has(window.location.hash) || window.location.hash.includes("token=") ? "console" : "landing");
   const [apiToken] = useState(apiTokenFromFragment);
   const [session, setSession] = useState<Session | null>(null);
   const [selected, setSelected] = useState<Event | null>(null);
-  const [error, setError] = useState("");
+  const [liveError, setLiveError] = useState("");
+  const [downloadError, setDownloadError] = useState("");
   const [policy, setPolicy] = useState<PolicyDetail | null>(null);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [labResult, setLabResult] = useState<ScenarioResult | null>(null);
@@ -169,6 +172,20 @@ function App() {
     window.history.pushState(null, "", `${window.location.pathname}${window.location.search}`);
     setView("landing");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const openSnapshot = async () => {
+    try {
+      const response = await fetch(snapshotUrl("session.json"));
+      if (!response.ok) throw new Error("Recorded snapshot unavailable");
+      const value = sessionFromSnapshot(await response.json() as Session);
+      setReadOnly(true);
+      setLiveError("");
+      setSession(value);
+      setSelected(value.events.at(-1) ?? null);
+    } catch (reason) {
+      setLiveError(reason instanceof Error ? reason.message : "Recorded snapshot unavailable");
+    }
   };
 
   useEffect(() => {
@@ -187,23 +204,18 @@ function App() {
     const load = async () => {
       try {
         const listResponse = await apiFetch("/api/sessions", apiToken);
-        if (!listResponse.ok) throw new Error("Dashboard API unavailable");
+        if (listResponse.status === 401) throw new Error("Authentication failed");
+        if (!listResponse.ok) throw new Error("Live runtime unavailable");
         const summaries = await listResponse.json() as SessionSummary[];
         const active = summaries[0];
         if (!active) throw new Error("No enforcement session is available");
         const response = await apiFetch(`/api/sessions/${encodeURIComponent(active.sessionId)}`, apiToken);
-        if (!response.ok) throw new Error("Active session is unavailable");
+        if (response.status === 401) throw new Error("Authentication failed");
+        if (!response.ok) throw new Error("No live session is available");
         const value = await response.json() as Session;
-        if (mounted) { setSession(value); setSelected(value.events.at(-1) ?? null); }
-      } catch {
-        try {
-          const response = await fetch(snapshotUrl("session.json"));
-          if (!response.ok) throw new Error("Recorded snapshot unavailable");
-          const value = await response.json() as Session;
-          const decisions = value.events.filter((event) => event.decision);
-          value.metrics = { totalToolCalls: decisions.length, allows: decisions.filter((event) => event.decision === "ALLOW").length, blocks: decisions.filter((event) => event.decision === "BLOCK").length, askUser: decisions.filter((event) => event.decision === "ASK_USER").length, quarantines: decisions.filter((event) => event.decision === "QUARANTINE").length, deterministicResolutionRate: 1, judgeEscalationRate: 0, judgeTokens: 0, cacheHitRate: 0 };
-          if (mounted) { setReadOnly(true); setSession(value); setSelected(value.events.at(-1) ?? null); }
-        } catch (reason) { if (mounted) setError(reason instanceof Error ? reason.message : "Unable to load session"); }
+        if (mounted) { setReadOnly(false); setLiveError(""); setSession(value); setSelected(value.events.at(-1) ?? null); }
+      } catch (reason) {
+        if (mounted) setLiveError(reason instanceof Error ? reason.message : "Live runtime unavailable");
       }
     };
     void load();
@@ -237,13 +249,13 @@ function App() {
   async function runScenario(scenario: Scenario): Promise<void> {
     setLabBusy(scenario.id);
     try {
-      if (readOnly) setLabResult({ scenarioId: scenario.id, expected: scenario.expected, actual: scenario.actual ?? scenario.expected, matched: (scenario.actual ?? scenario.expected) === scenario.expected, summary: scenario.summary });
+      if (readOnly) setLabResult({ scenarioId: scenario.id, expected: scenario.expected, actual: scenario.actual ?? "UNAVAILABLE", matched: scenario.actual === scenario.expected, summary: scenario.actual === undefined ? "Recorded evidence is missing." : scenario.summary });
       else {
         const response = await apiFetch("/api/demo/run", apiToken, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenarioId: scenario.id }) });
         if (!response.ok) throw new Error("Scenario replay failed");
         setLabResult(await response.json() as ScenarioResult);
       }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Scenario replay failed"); }
+    } catch (reason) { setDownloadError(reason instanceof Error ? reason.message : "Scenario replay failed"); }
     finally { setLabBusy(""); }
   }
 
@@ -259,11 +271,11 @@ function App() {
       link.download = href.includes("audit") ? "toolbastion-audit.jsonl" : href.includes("evaluation") ? "toolbastion-evaluation-summary.json" : href.includes("format=json") ? "toolbastion-report.json" : "toolbastion-report.md";
       link.click();
       URL.revokeObjectURL(objectUrl);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Report download failed"); }
+    } catch (reason) { setDownloadError(reason instanceof Error ? reason.message : "Report download failed"); }
   }
 
   if (view === "landing") return <Landing onOpenConsole={openConsole} />;
-  if (error) return <main className="center"><section className="empty"><p className="eyebrow">CONNECTION ERROR</p><h1>Security data is unavailable</h1><p>{error}. Start the localhost API and refresh.</p><button className="text-action" type="button" onClick={openLanding}>Back to product overview</button></section></main>;
+  if (liveError && !readOnly) return <main className="center"><section className="empty" aria-live="polite"><p className="eyebrow">LIVE RUNTIME UNAVAILABLE</p><h1>{liveError === "Authentication failed" ? "Authentication failed" : "Live runtime unavailable"}</h1><p>Reason: {liveError}</p><button className="text-action" type="button" onClick={() => { setLiveError(""); setSession(null); }}>Retry live connection</button><button className="text-action" type="button" onClick={() => void openSnapshot()}>Open verified recorded snapshot</button><button className="text-action" type="button" onClick={openLanding}>Back to product overview</button></section></main>;
   if (!session) return <main className="center"><p className="loading">Loading verified session…</p></main>;
 
   const recorded = readOnly || session.label === "OFFLINE FIXTURE REPLAY";
@@ -287,6 +299,7 @@ function App() {
       </div>
     </aside>
     <main className="dashboard-main">
+      {downloadError && <p className="alert" role="status">{downloadError}</p>}
       <header className="dashboard-header"><div><p className="eyebrow">PROTECTED SESSION</p><h1>Runtime overview</h1><p className="subtitle">{recorded ? session.staticLabel ?? "Verified recorded evidence. No live target is connected." : "One target. Every call inspected before execution."}</p></div><div className="header-actions"><button className="dashboard-return" type="button" onClick={openLanding}>Product overview</button><span className="badge">{readOnly ? "READ-ONLY SNAPSHOT" : session.label}</span><span className="mode"><Icon name="activity" />{session.mode}</span></div></header>
       <section className="metrics" id="overview">
         <Metric icon="activity" tone="blue" label="Tool calls" value={session.metrics.totalToolCalls} note={`${session.targetName} target`} />

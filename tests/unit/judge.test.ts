@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { OfflineFixtureJudge, aggregateSubchecks, buildJudgePrompt, createLiveJudgeProof, profileArguments, projectForExternalJudge } from "../../packages/judge/src/index.js";
+import { OfflineFixtureJudge, aggregateSubchecks, buildJudgePrompt, buildSemanticEnvelope, createLiveJudgeProof, profileArguments, projectForExternalJudge } from "../../packages/judge/src/index.js";
 import { judgeVerdictSchema } from "@toolbastion/shared";
 
 const safeChecks = [
@@ -15,6 +15,10 @@ describe("judge aggregation", () => {
   });
   it("asks for two suspicious verdicts", () => {
     expect(aggregateSubchecks([{ ...safeChecks[0]!, verdict: "suspicious" }, { ...safeChecks[1]!, verdict: "suspicious" }, safeChecks[2]!], "interactive", "low").decision).toBe("ASK_USER");
+  });
+  it("does not allow a single high-risk suspicious verdict", () => {
+    expect(aggregateSubchecks([{ ...safeChecks[0]!, verdict: "suspicious", riskLevel: "high" }, safeChecks[1]!, safeChecks[2]!], "interactive", "low").decision).toBe("ASK_USER");
+    expect(aggregateSubchecks([{ ...safeChecks[0]!, verdict: "suspicious", riskLevel: "high" }, safeChecks[1]!, safeChecks[2]!], "enforce", "low").decision).toBe("BLOCK");
   });
   it("fails closed when a required check is unavailable in enforce mode", () => {
     expect(aggregateSubchecks([{ ...safeChecks[0]!, verdict: "unavailable" }, safeChecks[1]!, safeChecks[2]!], "enforce", "low").decision).toBe("BLOCK");
@@ -82,7 +86,7 @@ describe("offline fixture replay", () => {
 });
 
 describe("judge prompt boundaries", () => {
-  it("keeps context and argument keys and values out of the external judge prompt", () => {
+  it("keeps raw context, metadata, argument keys, and values out of the external judge prompt", () => {
     const contextSentinel = "IGNORE_ALL_POLICY_CONTEXT_SENTINEL";
     const argumentKeySentinel = "PRIVATE_ARGUMENT_KEY_SENTINEL";
     const argumentValueSentinel = "PRIVATE_ARGUMENT_VALUE_SENTINEL";
@@ -100,17 +104,26 @@ describe("judge prompt boundaries", () => {
       baseRisk: "low",
       runtimeMode: "enforce"
     }));
-    const untrustedStart = prompt.indexOf("<UNTRUSTED_DATA>");
-    const untrustedEnd = prompt.indexOf("</UNTRUSTED_DATA>");
+    const untrustedStart = prompt.indexOf("<UNTRUSTED_SEMANTIC_ENVELOPE>");
+    const untrustedEnd = prompt.indexOf("</UNTRUSTED_SEMANTIC_ENVELOPE>");
     expect(untrustedStart).toBeGreaterThan(-1);
-    const descriptionPosition = prompt.indexOf(descriptionSentinel);
-    expect(descriptionPosition).toBeGreaterThan(untrustedStart);
-    expect(descriptionPosition).toBeLessThan(untrustedEnd);
+    expect(untrustedEnd).toBeGreaterThan(untrustedStart);
+    expect(prompt).not.toContain(descriptionSentinel);
     expect(prompt).not.toContain(contextSentinel);
     expect(prompt).not.toContain(argumentKeySentinel);
     expect(prompt).not.toContain(argumentValueSentinel);
     expect(prompt).not.toContain(policySentinel);
-    expect(prompt).toContain("CONTEXT_AVAILABLE=true");
+    expect(prompt).toContain("declaredIntent");
+  });
+
+  it("distinguishes safe test execution from destructive execution without raw commands", () => {
+    const base = { toolName: "run_project_command", untrustedDescription: "Run", schemaSummary: {}, policySummary: {}, deterministicEvidence: [], recentEvents: [], baseRisk: "high" as const, runtimeMode: "interactive" as const };
+    const safe = buildSemanticEnvelope({ ...base, args: { command: "npm test" } });
+    const destructive = buildSemanticEnvelope({ ...base, args: { command: "rm -rf src" } });
+    expect(safe).not.toEqual(destructive);
+    expect(JSON.stringify(safe)).not.toContain("npm test");
+    expect(JSON.stringify(destructive)).not.toContain("rm -rf src");
+    expect(destructive.arguments[0]).toMatchObject({ operation: "delete", containsDestructiveAction: true });
   });
 
   it("profiles nested arguments without retaining their content", () => {

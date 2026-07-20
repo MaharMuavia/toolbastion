@@ -9,15 +9,37 @@ const SECRET_PATTERNS = [
   { category: "private_key", expression: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g },
   { category: "environment_secret", expression: /\b(?:OPENAI_API_KEY|API_KEY|ACCESS_TOKEN|AUTH_TOKEN|PASSWORD|CLIENT_SECRET)\s*=\s*[^\s"']+/gi }
 ] as const;
-const INJECTION = /(?:ignore\s+(?:all\s+)?(?:previous|prior|system)|(?:call|invoke|execute|use)\s+(?:the\s+)?(?:tool|function)|do\s+not\s+(?:tell|show)\s+(?:the\s+)?user|system\s+message|developer\s+instruction)/i;
+const INJECTION = /(?:ignore\s+(?:all\s+)?(?:previous|prior|system)|(?:call|invoke|execute|use)\s+(?:the\s+)?(?:tool|function)|do\s+not\s+(?:tell|show)\s+(?:the\s+)?user|system\s+message|developer\s+instruction|ignora\s+(?:las\s+)?instrucciones|ignorez\s+les\s+instructions|忽略(?:之前|先前)的指令)/i;
 const URL_PATTERN = /https?:\/\/[^\s<>"')\]]+/gi;
 const SENSITIVE_KEY = /(?:api[_-]?key|authorization|credential|password|passwd|secret|token|private[_-]?key|cookie)/i;
 
 function riskRank(risk: RiskLevel): number { return ["none", "low", "medium", "high", "critical"].indexOf(risk); }
 
+function normalizeForInjectionDetection(value: string): string {
+  return value.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\s+/g, " ");
+}
+
+function suspiciousEncodedInstruction(value: string): boolean {
+  const candidates = value.match(/[A-Za-z0-9+/]{40,}={0,2}/g) ?? [];
+  return candidates.some((candidate) => {
+    try {
+      const decoded = Buffer.from(candidate, "base64").toString("utf8");
+      return decoded.length > 12 && INJECTION.test(normalizeForInjectionDetection(decoded));
+    } catch { return false; }
+  });
+}
+
 function trustedUrl(raw: string, config: ToolBastionConfig): boolean {
   try {
-    const host = new URL(raw).hostname.toLowerCase();
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.username || parsed.password) return false;
+    const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
+    if (!config.network.allowed_ports.includes(port)) return false;
+    if ([...parsed.searchParams.keys()].some((key) => /(?:token|secret|key|password|authorization|credential)/i.test(key))) return false;
+    const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost") || host === "169.254.169.254" || host === "metadata.google.internal") return false;
+    if (/^127\.|^10\.|^192\.168\.|^172\.(?:1[6-9]|2\d|3[01])\.|^169\.254\./.test(host) || host === "::" || host === "::1" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host)) return false;
     return config.network.allow_domains.some((domain) => host === domain.toLowerCase() || (config.network.allow_subdomains && host.endsWith(`.${domain.toLowerCase()}`)));
   } catch { return false; }
 }
@@ -55,7 +77,7 @@ export function inspectToolResult(result: unknown, config: ToolBastionConfig): T
       if (visitedBytes > config.limits.max_output_bytes) return bounded(fieldPath, "output_byte_limit", "Tool output exceeded the configured size limit");
       const controlCount = [...value].filter((character) => character.charCodeAt(0) < 9 || (character.charCodeAt(0) > 13 && character.charCodeAt(0) < 32)).length;
       if (value.length > 64 && controlCount / value.length > 0.05) { quarantine = true; add(fieldPath, "binary_output", "high", "Binary-like tool output was quarantined"); return "[QUARANTINED:binary-output]"; }
-      if (config.outputs.quarantine_prompt_injection && INJECTION.test(value)) { quarantine = true; add(fieldPath, "prompt_injection", "critical", "Tool output contains instructions directed at the agent"); }
+      if (config.outputs.quarantine_prompt_injection && (INJECTION.test(normalizeForInjectionDetection(value)) || suspiciousEncodedInstruction(value))) { quarantine = true; add(fieldPath, "prompt_injection", "critical", "Tool output contains instructions directed at the agent"); }
       if (config.outputs.quarantine_untrusted_urls) {
         for (const match of value.matchAll(URL_PATTERN)) if (!trustedUrl(match[0], config)) { quarantine = true; add(fieldPath, "untrusted_url", "high", "Tool output contains a URL outside the configured allowlist"); }
       }

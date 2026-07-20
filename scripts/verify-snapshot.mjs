@@ -86,6 +86,23 @@ async function readJson(file) {
   return z.unknown().parse(JSON.parse(await readFile(file, "utf8")));
 }
 
+/** @param {SnapshotSession} session */
+function deriveSnapshotMetrics(session) {
+  const decisions = session.events.filter((event) => typeof event.decision === "string");
+  const count = (decision) => decisions.filter((event) => event.decision === decision).length;
+  return {
+    totalToolCalls: decisions.length,
+    allows: count("ALLOW"),
+    blocks: count("BLOCK"),
+    askUser: count("ASK_USER"),
+    quarantines: count("QUARANTINE"),
+    deterministicResolutionRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens === 0).length / decisions.length,
+    judgeEscalationRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens > 0).length / decisions.length,
+    judgeTokens: session.events.reduce((sum, event) => sum + (typeof event.judgeTokens === "number" ? event.judgeTokens : 0), 0),
+    cacheHitRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.cacheHit === true).length / decisions.length
+  };
+}
+
 const errors = [];
 let verification = { valid: false, eventCount: 0, errors: ["Snapshot verification did not run"] };
 
@@ -122,7 +139,7 @@ try {
       }
     }
   }
-  if (!isSnapshotSession(fixtureSession) || !isSnapshotSession(session) || canonicalJson(session) !== canonicalJson({ ...fixtureSession, staticLabel: "Read-only recorded security session" })) {
+  if (!isSnapshotSession(fixtureSession) || !isSnapshotSession(session) || canonicalJson(session) !== canonicalJson({ ...fixtureSession, metrics: deriveSnapshotMetrics(fixtureSession), staticLabel: "Read-only recorded security session" })) {
     errors.push("session.json does not match the recorded-session fixture");
   }
 

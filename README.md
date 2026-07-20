@@ -24,6 +24,10 @@
 
 ToolBastion is an MCP server to the coding agent and an MCP client to one local stdio target. It verifies tool metadata and advertised input contracts, applies deterministic policy before execution, sends only genuinely ambiguous calls to three structured GPT-5.6 checks, inspects returned content, and writes a redacted tamper-evident audit trail. In `enforce` and `interactive` modes, clear violations, unknown tools, invalid tool arguments, and unapproved metadata are blocked before the target tool body runs; `shadow` records the same decisions while forwarding for evaluation.
 
+## Limitations
+
+ToolBastion supports one local stdio target per proxy process; it is not a remote MCP gateway, general OS sandbox, or egress proxy. A dispatched target call that fails, times out, or has an unconfirmed termination is reported through its execution state (`FAILED`, `TIMED_OUT`, or `UNKNOWN`) rather than as a pre-execution block. Docker isolation uses `--network=none`, so policy allowlisting does not grant target egress. GPT checks are privacy-preserving semantic assessments, not live-model accuracy evidence.
+
 Release: `v0.1.0` · Category: Developer Tools · License: Apache-2.0
 
 > [!IMPORTANT]
@@ -96,7 +100,7 @@ flowchart LR
   H --> API["Local API + dashboard"]
 ```
 
-The API and dashboard are never in the enforcement path. They display a verified fixture when no proxy is active and automatically switch to the redacted lifecycle log produced by `toolbastion run` for a live local session. Recorded Attack Lab fixtures remain labelled separately from live activity. See the [architecture](docs/architecture.md) and [threat model](SECURITY_ASSUMPTIONS.md).
+The API and dashboard are never in the enforcement path. They display the redacted lifecycle log produced by `toolbastion run` for a live local session. If live authentication or connectivity fails, the console reports that failure and requires an explicit user action before opening a verified recorded snapshot. Recorded Attack Lab fixtures remain labelled separately from live activity. See the [architecture](docs/architecture.md) and [threat model](SECURITY_ASSUMPTIONS.md).
 
 <details>
 <summary><strong>What happens to one MCP call?</strong></summary>
@@ -111,7 +115,15 @@ The API and dashboard are never in the enforcement path. They display a verified
 
 ## Security decisions
 
-Request decisions are `ALLOW`, `ASK_USER`, or `BLOCK`. Output decisions are `PASS`, `REDACT`, or `QUARANTINE`.
+Authorization decisions are `ALLOW`, `ASK_USER`, or `BLOCK_BEFORE_EXECUTION`; execution states are `NOT_DISPATCHED`, `DISPATCHED`, `COMPLETED`, `FAILED`, `TIMED_OUT`, or `UNKNOWN`; output decisions are `NOT_INSPECTED`, `PASS`, `REDACT`, or `QUARANTINE`.
+
+## Receipt verification
+
+ToolBastion can verify signed Ed25519 call receipts without an API key or dashboard. The operator-held private key must be provided only through `TOOLBASTION_RECEIPT_PRIVATE_KEY`; it must never be committed or supplied to the target, Codex, or the judge. A receipt embeds its public verification key and key fingerprint:
+
+```powershell
+node .\apps\cli\dist\index.js receipt verify .\receipt.json
+```
 
 Interactive mode returns an explicit `ASK_USER` result for ambiguous calls and never trusts an approval supplied by the coding agent itself. An independently authenticated operator-approval channel is required before approval can become a forwarding capability.
 

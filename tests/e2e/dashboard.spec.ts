@@ -46,10 +46,12 @@ test("landing navigation leads to the decision receipt", async ({ page }) => {
   await expect(page.locator(".decision-step")).toContainText("BLOCKED");
 });
 
-test("static dashboard fallback is clearly read-only", async ({ page }) => {
+test("static dashboard fallback requires an explicit user choice", async ({ page }) => {
   await page.route("**/api/**", (route) => route.abort());
   await page.goto("/");
   await page.getByRole("button", { name: "Open security console" }).click();
+  await expect(page.getByRole("heading", { name: "Live runtime unavailable" })).toBeVisible();
+  await page.getByRole("button", { name: "Open verified recorded snapshot" }).click();
   await expect(page.getByText("READ-ONLY SNAPSHOT")).toBeVisible();
   await expect(page.getByText("Read-only recorded security session")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recorded scenario explorer" })).toBeVisible();

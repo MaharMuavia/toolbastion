@@ -13,12 +13,12 @@ import { AuditLog, redactAuditPayload } from "@toolbastion/audit";
 import { createJudgeProvider, unavailableJudgeVerdict, type JudgeProvider } from "@toolbastion/judge";
 import { inspectToolResult } from "@toolbastion/output-firewall";
 import { ExactCallCache, applyRuntimeMode, diffTrustBaseline, evaluateDeterministic, readTrustBaseline, type TrustDiff } from "@toolbastion/policy";
-import { sha256, targetServerConfigSchema, TOOLBASTION_VERSION, type DeterministicResult, type JudgeVerdict, type RequestDecision, type TargetServerConfig, type TargetServerConfigInput, type ToolBastionConfig } from "@toolbastion/shared";
+import { sha256, targetServerConfigSchema, TOOLBASTION_VERSION, type AuthorizationDecision, type DeterministicResult, type ExecutionState, type JudgeVerdict, type OutputDecision, type RequestDecision, type TargetServerConfig, type TargetServerConfigInput, type ToolBastionConfig } from "@toolbastion/shared";
 
 export type LifecycleEvent = {
   eventId: string;
   timestamp: string;
-  eventType: "session_started" | "target_connecting" | "target_connected" | "tools_listed" | "tools_changed" | "trust_verified" | "policy_evaluated" | "call_blocked" | "tool_forwarded" | "target_call_failed" | "output_inspected" | "audit_failed" | "target_closed";
+  eventType: "session_started" | "target_connecting" | "target_connected" | "tools_listed" | "tools_changed" | "trust_verified" | "policy_evaluated" | "tool_call_received" | "authorization_completed" | "tool_dispatch_started" | "tool_dispatch_completed" | "tool_dispatch_failed" | "tool_dispatch_timed_out" | "target_termination_started" | "target_terminated" | "target_restart_started" | "target_restarted" | "output_inspected" | "call_completed" | "call_blocked" | "tool_forwarded" | "target_call_failed" | "audit_failed" | "target_closed";
   payload: Record<string, unknown>;
 };
 
@@ -152,9 +152,9 @@ export function buildDockerTargetCommand(config: TargetServerConfig, projectRoot
   const isolation: DockerIsolation = config.isolation;
   const source = path.resolve(projectRoot);
   if (source.includes(",")) throw new Error("Docker target isolation does not support a project_root containing a comma");
-  const environmentArgs = Object.entries(environment)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .flatMap(([name, value]) => ["--env", `${name}=${value}`]);
+  const environmentArgs = Object.keys(environment)
+    .sort((left, right) => left.localeCompare(right))
+    .flatMap((name) => ["--env", name]);
   return {
     command: "docker",
     args: [
@@ -227,8 +227,8 @@ async function assertDockerImageAvailable(image: string): Promise<void> {
 
 export class ToolBastionTargetClient {
   readonly #config: TargetServerConfig;
-  readonly #client: Client;
-  readonly #transport: StdioClientTransport;
+  #client: Client;
+  #transport: StdioClientTransport;
   readonly #emit: EventSink;
   readonly #onToolsChanged: () => Promise<void>;
   readonly #timeoutMs: number;
@@ -237,6 +237,7 @@ export class ToolBastionTargetClient {
   readonly #isolatedTargetEnvironment: Record<string, string>;
   #connected = false;
   #preflighted = false;
+  #recovery: Promise<void> | undefined;
 
   constructor(config: TargetClientConfig, emit: EventSink = () => undefined, onToolsChanged: () => Promise<void> = () => Promise.resolve(), timeoutMs = 30_000, projectRoot = process.cwd()) {
     const parsedInput = "envAllowlist" in config
@@ -252,11 +253,7 @@ export class ToolBastionTargetClient {
     this.#projectRoot = path.resolve(projectRoot);
     this.#targetEnvironment = buildTargetEnvironment(this.#config.envAllowlist);
     this.#isolatedTargetEnvironment = buildIsolatedTargetEnvironment(this.#config.envAllowlist);
-    this.#client = new Client({ name: "toolbastion", version: TOOLBASTION_VERSION }, { capabilities: {} });
-    this.#client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
-      this.#event("tools_changed", { targetName: this.#config.name });
-      await this.#onToolsChanged();
-    });
+    this.#client = this.#createClient();
     const launch = this.#config.isolation.provider === "docker"
       ? buildDockerTargetCommand(this.#config, this.#projectRoot, this.#isolatedTargetEnvironment)
       : { command: this.#config.command, args: this.#config.args };
@@ -267,8 +264,7 @@ export class ToolBastionTargetClient {
       stderr: "pipe"
     };
     if (this.#config.isolation.provider !== "docker" && this.#config.cwd !== undefined) options.cwd = this.#config.cwd;
-    this.#transport = new StdioClientTransport(options);
-    this.#transport.stderr?.on("data", () => undefined);
+    this.#transport = this.#createTransport(options);
   }
 
   async connect(): Promise<void> {
@@ -295,9 +291,27 @@ export class ToolBastionTargetClient {
 
   async callTool(name: string, args: Record<string, unknown>) {
     this.#assertConnected();
-    const result = await this.#client.callTool({ name, arguments: args }, undefined, { timeout: this.#timeoutMs });
-    this.#event("tool_forwarded", { toolName: name });
-    return result;
+    if (this.#recovery) throw new Error("Target recovery is in progress; fail closed");
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const request = this.#client.callTool({ name, arguments: args });
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new TargetCallTimeoutError()), this.#timeoutMs);
+      });
+      return await Promise.race([request, deadline]);
+    } catch (error) {
+      if (error instanceof TargetCallTimeoutError || this.#isTimeout(error)) {
+        try {
+          await this.#recoverAfterTimeout();
+          throw new TargetCallTimeoutError(true);
+        } catch {
+          throw new TargetCallTimeoutError(false);
+        }
+      }
+      throw error;
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
   }
 
   async close(): Promise<void> {
@@ -307,9 +321,90 @@ export class ToolBastionTargetClient {
   }
 
   #assertConnected(): void { if (!this.#connected) throw new Error("Target MCP client is not connected"); }
+  #createClient(): Client {
+    const client = new Client({ name: "toolbastion", version: TOOLBASTION_VERSION }, { capabilities: {} });
+    client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+      this.#event("tools_changed", { targetName: this.#config.name });
+      await this.#onToolsChanged();
+    });
+    return client;
+  }
+
+  #createTransport(options: ConstructorParameters<typeof StdioClientTransport>[0]): StdioClientTransport {
+    const transport = new StdioClientTransport(options);
+    transport.stderr?.on("data", () => undefined);
+    return transport;
+  }
+
+  #isTimeout(error: unknown): boolean {
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return /timeout|timed out|deadline/i.test(message);
+  }
+
+  async #recoverAfterTimeout(): Promise<void> {
+    if (this.#recovery) return this.#recovery;
+    this.#recovery = (async () => {
+      const pid = this.#transport.pid;
+      this.#connected = false;
+      this.#event("target_termination_started", { targetName: this.#config.name, ...(pid === null ? {} : { pid }) });
+      const terminated = await terminateProcessTree(pid);
+      if (!terminated) throw new Error("Target termination could not be confirmed; proxy remains fail closed");
+      this.#event("target_terminated", { targetName: this.#config.name, ...(pid === null ? {} : { pid }) });
+      await this.#transport.close().catch(() => undefined);
+      this.#event("target_restart_started", { targetName: this.#config.name });
+      this.#client = this.#createClient();
+      const launch = this.#config.isolation.provider === "docker"
+        ? buildDockerTargetCommand(this.#config, this.#projectRoot, this.#isolatedTargetEnvironment)
+        : { command: this.#config.command, args: this.#config.args };
+      const options: ConstructorParameters<typeof StdioClientTransport>[0] = { command: launch.command, args: launch.args, env: this.#targetEnvironment, stderr: "pipe" };
+      if (this.#config.isolation.provider !== "docker" && this.#config.cwd !== undefined) options.cwd = this.#config.cwd;
+      this.#transport = this.#createTransport(options);
+      await this.connect();
+      await this.#onToolsChanged();
+      this.#event("target_restarted", { targetName: this.#config.name });
+    })();
+    try {
+      await this.#recovery;
+    } finally {
+      this.#recovery = undefined;
+    }
+  }
   #event(eventType: LifecycleEvent["eventType"], payload: Record<string, unknown>): void {
     this.#emit({ eventId: randomUUID(), timestamp: new Date().toISOString(), eventType, payload });
   }
+}
+
+export class TargetCallTimeoutError extends Error {
+  readonly confirmedTermination: boolean;
+  constructor(confirmedTermination = true) {
+    super("Target call timed out and recovery completed");
+    this.name = "TargetCallTimeoutError";
+    this.confirmedTermination = confirmedTermination;
+  }
+}
+
+async function terminateProcessTree(pid: number | null): Promise<boolean> {
+  if (pid === null) return false;
+  const exited = (): boolean => {
+    try { process.kill(pid, 0); return false; }
+    catch { return true; }
+  };
+  if (process.platform === "win32") {
+    await new Promise<void>((resolve) => {
+      const child = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { shell: false, windowsHide: true, stdio: "ignore" });
+      child.once("close", () => resolve());
+      child.once("error", () => resolve());
+    });
+  } else {
+    try { process.kill(-pid, "SIGKILL"); }
+    catch { try { process.kill(pid, "SIGKILL"); } catch { return false; } }
+  }
+  const deadline = Date.now() + 1_500;
+  while (Date.now() < deadline) {
+    if (exited()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return exited();
 }
 
 type CachedDecision = { result: DeterministicResult; decision: RequestDecision; judge?: JudgeVerdict };
@@ -424,13 +519,17 @@ export class ToolBastionProxy {
 
   async #handleCallInner(toolName: string, args: Record<string, unknown>) {
     const callId = randomUUID();
+    const argsHash = sha256(args);
+    const policyHash = sha256(this.#config);
     const boundsViolation = findValueBoundsViolation(args, {
       maxBytes: this.#config.limits.max_argument_bytes,
       maxDepth: this.#config.limits.max_argument_depth,
       maxNodes: this.#config.limits.max_argument_nodes
     });
     if (boundsViolation) {
-      if (!await this.#appendAudit("tool_call_received", { callId, toolName, argumentBoundsViolation: boundsViolation })) {
+      const lifecycle = this.#callLifecycle({ callId, toolName, argsHash, policyHash, authorizationDecision: "BLOCK_BEFORE_EXECUTION", executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED" });
+      this.#emitEvent("tool_call_received", { ...lifecycle, argumentBoundsViolation: boundsViolation });
+      if (!await this.#appendAudit("tool_call_received", { ...lifecycle, argumentBoundsViolation: boundsViolation })) {
         if (this.#config.mode === "enforce") return this.#auditUnavailable(toolName);
       }
       return this.#blocked(toolName, "argument_bounds_exceeded", [boundsViolation], {
@@ -438,8 +537,8 @@ export class ToolBastionProxy {
         deterministicEvidence: [{ category: boundsViolation, severity: "high" }]
       });
     }
-    const argsHash = sha256(args);
-    if (!await this.#appendAudit("tool_call_received", { callId, toolName, argsHash })) {
+    this.#emitEvent("tool_call_received", this.#callLifecycle({ callId, toolName, argsHash, policyHash, authorizationDecision: "BLOCK_BEFORE_EXECUTION", executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED" }));
+    if (!await this.#appendAudit("tool_call_received", this.#callLifecycle({ callId, toolName, argsHash, policyHash, authorizationDecision: "BLOCK_BEFORE_EXECUTION", executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED" }))) {
       if (this.#config.mode === "enforce") return this.#auditUnavailable(toolName);
     }
     const tool = this.#tools.find((candidate) => candidate.name === toolName);
@@ -474,7 +573,6 @@ export class ToolBastionProxy {
         }
       }
     }
-    const policyHash = sha256(this.#config);
     const context = this.#config.judge.enabled ? await loadJudgeContext(this.#config) : { status: "unavailable" as const, reason: "judge_disabled" };
     const fingerprint = this.#cache.fingerprint({ targetName: this.#config.target.name, toolName, schemaHash, policyHash, args, mode: this.#config.mode, contextHash: sha256(context) });
     let cached = this.#config.cache.enabled ? this.#cache.get(fingerprint) : undefined;
@@ -510,33 +608,83 @@ export class ToolBastionProxy {
     }
     const safeJudge = summarizeJudgeVerdict(cached.judge);
     this.#emitEvent("policy_evaluated", { toolName, argsHash, decision: cached.decision, deterministic: cached.result, judge: safeJudge, contextStatus: context.status, contextReason: context.reason, cacheHits: this.#cache.hits, cacheMisses: this.#cache.misses });
-    if (!await this.#appendAudit("policy_decision", { callId, toolName, argsHash, decision: cached.decision, deterministic: cached.result, judge: safeJudge, contextStatus: context.status, contextReason: context.reason })) {
+    const authorizationDecision: AuthorizationDecision = cached.decision === "ALLOW" ? "ALLOW" : cached.decision === "ASK_USER" ? "ASK_USER" : "BLOCK_BEFORE_EXECUTION";
+    const authorizationLifecycle = this.#callLifecycle({ callId, toolName, argsHash, schemaHash, policyHash, authorizationDecision, executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED" });
+    this.#emitEvent("authorization_completed", { ...authorizationLifecycle, deterministic: cached.result, judge: safeJudge, contextStatus: context.status, contextReason: context.reason });
+    if (!await this.#appendAudit("authorization_completed", { ...authorizationLifecycle, deterministic: cached.result, judge: safeJudge, contextStatus: context.status, contextReason: context.reason })) {
       if (this.#config.mode === "enforce") return this.#auditUnavailable(toolName);
     }
-    const blockedContext = { callId, argsHash, deterministicEvidence: cached.result.evidence, ...(safeJudge === undefined ? {} : { judgeVerdict: safeJudge }) };
+    const blockedContext = { callId, argsHash, schemaHash, policyHash, deterministicEvidence: cached.result.evidence, ...(safeJudge === undefined ? {} : { judgeVerdict: safeJudge }) };
     if (cached.decision === "BLOCK") return this.#blocked(toolName, "deterministic_block", cached.result.reasonCodes, blockedContext);
     if (cached.decision === "ASK_USER") {
       return this.#blocked(toolName, "operator_approval_required", cached.result.reasonCodes, blockedContext);
     }
     let result: Awaited<ReturnType<ToolBastionTargetClient["callTool"]>>;
+    const dispatchLifecycle = this.#callLifecycle({ callId, toolName, argsHash, schemaHash, policyHash, authorizationDecision: "ALLOW", executionState: "DISPATCHED", outputDecision: "NOT_INSPECTED" });
+    this.#emitEvent("tool_dispatch_started", dispatchLifecycle);
+    if (!await this.#appendAudit("tool_dispatch_started", dispatchLifecycle) && this.#config.mode === "enforce") return this.#postDispatchUnavailable(toolName, dispatchLifecycle);
     try {
       result = await this.#target.callTool(toolName, args);
     } catch (error) {
-      const reason = error instanceof Error ? error.name : "target_call_failed";
-      this.#emitEvent("target_call_failed", { toolName, reason });
-      await this.#appendAudit("target_call_failed", { callId, toolName, reason });
-      return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: "BLOCK", reason: "target_call_failed" }) }] };
+      const timedOut = error instanceof TargetCallTimeoutError;
+      const executionState: ExecutionState = timedOut ? error.confirmedTermination ? "TIMED_OUT" : "UNKNOWN" : "FAILED";
+      const lifecycle = this.#callLifecycle({ callId, toolName, argsHash, schemaHash, policyHash, authorizationDecision: "ALLOW", executionState, outputDecision: "NOT_INSPECTED" });
+      const reason = timedOut ? executionState === "UNKNOWN" ? "target_outcome_unknown" : "target_call_timed_out" : error instanceof Error ? error.name : "target_call_failed";
+      this.#emitEvent(timedOut ? "tool_dispatch_timed_out" : "tool_dispatch_failed", { ...lifecycle, reason });
+      await this.#appendAudit(timedOut ? "tool_dispatch_timed_out" : "tool_dispatch_failed", { ...lifecycle, reason });
+      this.#emitEvent("call_completed", { ...lifecycle, reason });
+      await this.#appendAudit("call_completed", { ...lifecycle, reason });
+      return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ authorizationDecision: "ALLOW", executionState, outputDecision: "NOT_INSPECTED", reason }) }] };
     }
-    if (!this.#config.outputs.inspect) return result;
+    const completedLifecycle = this.#callLifecycle({ callId, toolName, argsHash, schemaHash, policyHash, authorizationDecision: "ALLOW", executionState: "COMPLETED", outputDecision: "NOT_INSPECTED" });
+    this.#emitEvent("tool_dispatch_completed", completedLifecycle);
+    if (!await this.#appendAudit("tool_dispatch_completed", completedLifecycle) && this.#config.mode === "enforce") return this.#postDispatchUnavailable(toolName, completedLifecycle);
+    if (!this.#config.outputs.inspect) {
+      this.#emitEvent("call_completed", completedLifecycle);
+      await this.#appendAudit("call_completed", completedLifecycle);
+      return result;
+    }
     const inspection = inspectToolResult(result, this.#config);
-    this.#emitEvent("output_inspected", { toolName, decision: inspection.decision, riskLevel: inspection.riskLevel, evidence: inspection.evidence, redactions: inspection.redactions.length, quarantineId: inspection.quarantineId });
-    if (!await this.#appendAudit("output_inspected", { toolName, decision: inspection.decision, riskLevel: inspection.riskLevel, evidence: inspection.evidence, redactions: inspection.redactions, quarantineId: inspection.quarantineId })) {
-      if (this.#config.mode === "enforce") return this.#auditUnavailable(toolName);
+    const outputLifecycle = this.#callLifecycle({ callId, toolName, argsHash, schemaHash, policyHash, authorizationDecision: "ALLOW", executionState: "COMPLETED", outputDecision: inspection.decision });
+    this.#emitEvent("output_inspected", { ...outputLifecycle, riskLevel: inspection.riskLevel, evidence: inspection.evidence, redactions: inspection.redactions.length, quarantineId: inspection.quarantineId });
+    if (!await this.#appendAudit("output_inspected", { ...outputLifecycle, riskLevel: inspection.riskLevel, evidence: inspection.evidence, redactions: inspection.redactions, quarantineId: inspection.quarantineId })) {
+      if (this.#config.mode === "enforce") return this.#postDispatchUnavailable(toolName, outputLifecycle);
     }
     if (inspection.decision === "QUARANTINE") {
       return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: "QUARANTINE", reason: "unsafe_tool_output", evidence: inspection.evidence.map((item) => item.category), quarantineId: inspection.quarantineId }) }] };
     }
+    this.#emitEvent("call_completed", outputLifecycle);
+    await this.#appendAudit("call_completed", outputLifecycle);
     return inspection.sanitizedResult as typeof result;
+  }
+
+  #callLifecycle(input: {
+    callId: string;
+    toolName: string;
+    argsHash?: string;
+    schemaHash?: string;
+    policyHash?: string;
+    authorizationDecision: AuthorizationDecision;
+    executionState: ExecutionState;
+    outputDecision: OutputDecision;
+  }): Record<string, unknown> {
+    return {
+      sessionId: this.#audit.sessionId,
+      callId: input.callId,
+      toolName: input.toolName,
+      ...(input.argsHash === undefined ? {} : { argsHash: input.argsHash }),
+      ...(input.schemaHash === undefined ? {} : { schemaHash: input.schemaHash }),
+      ...(input.policyHash === undefined ? {} : { policyHash: input.policyHash }),
+      authorizationDecision: input.authorizationDecision,
+      executionState: input.executionState,
+      outputDecision: input.outputDecision
+    };
+  }
+
+  #postDispatchUnavailable(toolName: string, lifecycle: Record<string, unknown>) {
+    const result = { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ ...lifecycle, reason: "audit_unavailable_after_execution" }) }] };
+    this.#emitEvent("call_completed", { ...lifecycle, reason: "audit_unavailable_after_execution" });
+    return result;
   }
 
   #validateToolInput(schemaHash: string, inputSchema: Record<string, unknown>, args: Record<string, unknown>): ToolInputValidation {
@@ -556,10 +704,20 @@ export class ToolBastionProxy {
     }
   }
 
-  async #blocked(toolName: string, reason: string, evidence: string[], context?: { callId: string; argsHash?: string; deterministicEvidence: unknown; judgeVerdict?: SafeJudgeVerdict }) {
+  async #blocked(toolName: string, reason: string, evidence: string[], context?: { callId: string; argsHash?: string; schemaHash?: string; policyHash?: string; deterministicEvidence: unknown; judgeVerdict?: SafeJudgeVerdict }) {
     const eventId = randomUUID();
-    this.#emitEvent("call_blocked", { toolName, reason, evidence, eventId });
-    await this.#appendAudit("call_blocked", { toolName, reason, evidence, eventId, ...context });
+    const lifecycle = context === undefined ? {} : this.#callLifecycle({
+      callId: context.callId,
+      toolName,
+      ...(context.argsHash === undefined ? {} : { argsHash: context.argsHash }),
+      ...(context.schemaHash === undefined ? {} : { schemaHash: context.schemaHash }),
+      ...(context.policyHash === undefined ? {} : { policyHash: context.policyHash }),
+      authorizationDecision: reason === "operator_approval_required" ? "ASK_USER" : "BLOCK_BEFORE_EXECUTION",
+      executionState: "NOT_DISPATCHED",
+      outputDecision: "NOT_INSPECTED"
+    });
+    this.#emitEvent("call_blocked", { ...lifecycle, toolName, reason, evidence, eventId });
+    await this.#appendAudit("call_blocked", { ...lifecycle, toolName, reason, evidence, eventId, ...context });
     return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: reason === "operator_approval_required" ? "ASK_USER" : "BLOCK", reason, evidence, eventId }) }] };
   }
 

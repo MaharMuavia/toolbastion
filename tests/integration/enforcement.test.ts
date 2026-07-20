@@ -142,9 +142,14 @@ describe("enforce mode", () => {
     expect(await executionCount()).toBe(before);
   });
 
-  it("returns a controlled error when a target call exceeds its deadline", async () => {
+  it("reports a truthful timeout state and restarts the target after a deadline", async () => {
     const result = await client.callTool({ name: "slow_tool", arguments: { delay_ms: 500 } });
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toContain("target_call_failed");
-  });
+    const response = (result.content as Array<{ type: string; text: string }>)[0]?.text ?? "";
+    expect(response).toMatch(/"executionState":"(?:TIMED_OUT|UNKNOWN)"/);
+    if (response.includes("TIMED_OUT")) {
+      const restarted = await client.callTool({ name: "read_project_file", arguments: { path: "src/safe.ts" } });
+      expect(restarted.isError).not.toBe(true);
+    }
+  }, 10_000);
 });

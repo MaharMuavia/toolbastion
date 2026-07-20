@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createPrivateKey, createPublicKey, randomUUID, sign, verify } from "node:crypto";
 import { mkdir, open, readFile, realpath, stat, type FileHandle } from "node:fs/promises";
 import path from "node:path";
-import { auditEventSchema, canonicalJson, sha256, type AuditEvent } from "@toolbastion/shared";
+import { auditEventSchema, bastionReceiptSchema, canonicalJson, sha256, type AuditEvent, type BastionReceipt } from "@toolbastion/shared";
 
 const SECRET_KEY = /(?:api[_-]?key|authorization|credential|password|passwd|secret|token|private[_-]?key|cookie|connection(?:[_-]?(?:string|uri|url))?|database(?:[_-]?(?:url|uri))?|dsn)/i;
 const SECRET_VALUE = /(?:sk-(?:proj-)?[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|AKIA[A-Z0-9]{16}|Bearer\s+[A-Za-z0-9._~+/=-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/gi;
@@ -11,6 +11,43 @@ const RAW_ARGUMENT_KEY = /^(?:args|arguments)$/i;
 const AUDIT_FORMAT_VERSION = 2;
 const SESSION_START_EVENT = "audit_session_started";
 const SESSION_SEAL_EVENT = "audit_session_sealed";
+
+type UnsignedReceipt = Omit<BastionReceipt, "signature">;
+
+function unsignedReceipt(receipt: BastionReceipt): UnsignedReceipt {
+  const unsigned = { ...receipt };
+  delete (unsigned as Partial<BastionReceipt>).signature;
+  return unsigned as UnsignedReceipt;
+}
+
+export function signReceipt(unsigned: UnsignedReceipt, privateKeyPem = process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY): BastionReceipt {
+  if (!privateKeyPem) throw new Error("TOOLBASTION_RECEIPT_PRIVATE_KEY must contain an operator-held Ed25519 PEM private key");
+  const privateKey = createPrivateKey(privateKeyPem);
+  if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("TOOLBASTION_RECEIPT_PRIVATE_KEY must be an Ed25519 private key");
+  const publicKey = createPublicKey(privateKey).export({ type: "spki", format: "pem" }).toString();
+  const signature = sign(null, Buffer.from(canonicalJson(unsigned), "utf8"), privateKey).toString("base64");
+  return bastionReceiptSchema.parse({
+    ...unsigned,
+    signature: { algorithm: "ed25519", keyId: sha256(publicKey), publicKey, value: signature }
+  });
+}
+
+export function verifyReceipt(receipt: unknown): { valid: boolean; errors: string[] } {
+  const parsed = bastionReceiptSchema.safeParse(receipt);
+  if (!parsed.success) return { valid: false, errors: parsed.error.issues.map((issue) => issue.message) };
+  const value = parsed.data;
+  const errors: string[] = [];
+  if (value.signature.keyId !== sha256(value.signature.publicKey)) errors.push("receipt public key id is invalid");
+  try {
+    const key = createPublicKey(value.signature.publicKey);
+    if (key.asymmetricKeyType !== "ed25519") errors.push("receipt public key is not Ed25519");
+    else if (!verify(null, Buffer.from(canonicalJson(unsignedReceipt(value)), "utf8"), key, Buffer.from(value.signature.value, "base64"))) errors.push("receipt signature is invalid");
+  } catch { errors.push("receipt public key is invalid"); }
+  if (value.authorizationDecision === "BLOCK_BEFORE_EXECUTION" && value.executionState !== "NOT_DISPATCHED") errors.push("pre-execution block has an invalid execution state");
+  if (value.executionState === "NOT_DISPATCHED" && value.outputDecision !== "NOT_INSPECTED") errors.push("undispatched call has an invalid output decision");
+  if (value.completedAt === undefined) errors.push("receipt is incomplete");
+  return { valid: errors.length === 0, errors };
+}
 
 export function redactAuditPayload(value: unknown, key = ""): unknown {
   if (SECRET_KEY.test(key)) return "[REDACTED:sensitive-field]";

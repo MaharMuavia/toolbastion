@@ -1,8 +1,9 @@
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { generateKeyPairSync } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuditLog, resolveAuditReadFile, verifyAndReadAuditFile, verifyAuditFile } from "@toolbastion/audit";
+import { AuditLog, resolveAuditReadFile, signReceipt, verifyAndReadAuditFile, verifyAuditFile, verifyReceipt } from "@toolbastion/audit";
 import { sha256 } from "@toolbastion/shared";
 
 const files: string[] = [];
@@ -26,6 +27,19 @@ async function fixture() {
 }
 
 describe("tamper-evident audit log", () => {
+  it("signs and independently verifies complete Ed25519 call receipts", () => {
+    const { privateKey } = generateKeyPairSync("ed25519");
+    const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const receipt = signReceipt({
+      version: 1, sessionId: "session", callId: "call", toolName: "read_file",
+      toolManifestHash: sha256({ tools: [] }), schemaHash: sha256({}), policyHash: sha256({ mode: "enforce" }), argsHash: sha256({ path: "src/index.ts" }),
+      authorizationDecision: "ALLOW", executionState: "COMPLETED", outputDecision: "PASS",
+      startedAt: "2026-07-20T00:00:00.000Z", completedAt: "2026-07-20T00:00:01.000Z"
+    }, privateKeyPem);
+    expect(verifyReceipt(receipt)).toEqual({ valid: true, errors: [] });
+    expect(verifyReceipt({ ...receipt, toolName: "write_file" }).valid).toBe(false);
+  });
+
   it("writes a valid hash chain without raw secrets", async () => {
     const file = await fixture();
     expect(await verifyAuditFile(file)).toEqual({ valid: true, eventCount: 7, errors: [] });

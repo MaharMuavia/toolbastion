@@ -88,7 +88,8 @@ export async function createApi(options: ApiOptions) {
   let sseClients = 0;
   if (accessToken !== undefined) {
     app.addHook("onRequest", async (request, reply) => {
-      if (request.url.split("?", 1)[0] === "/api/health") return;
+      const route = request.url.split("?", 1)[0] ?? "";
+      if (!route.startsWith("/api/") || route === "/api/health") return;
       if (!authorized(request.headers.authorization, accessToken)) return reply.code(401).send({ error: "authentication_required" });
     });
   }

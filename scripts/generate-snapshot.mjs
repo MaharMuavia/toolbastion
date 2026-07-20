@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -9,6 +9,19 @@ const root = process.cwd();
 const session = JSON.parse(await readFile(path.join(root, "fixtures", "dashboard-snapshot", "session.json"), "utf8"));
 const scenarios = await readFile(path.join(root, "fixtures", "dashboard-snapshot", "scenarios.json"), "utf8");
 const destination = path.join(root, "apps", "dashboard", "public", "snapshot");
+const decisions = session.events.filter((event) => typeof event.decision === "string");
+const decisionCount = (decision) => decisions.filter((event) => event.decision === decision).length;
+const snapshotMetrics = {
+  totalToolCalls: decisions.length,
+  allows: decisionCount("ALLOW"),
+  blocks: decisionCount("BLOCK"),
+  askUser: decisionCount("ASK_USER"),
+  quarantines: decisionCount("QUARANTINE"),
+  deterministicResolutionRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens === 0).length / decisions.length,
+  judgeEscalationRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens > 0).length / decisions.length,
+  judgeTokens: session.events.reduce((sum, event) => sum + event.judgeTokens, 0),
+  cacheHitRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.cacheHit).length / decisions.length
+};
 await mkdir(destination, { recursive: true });
 let previousHash = "GENESIS";
 const auditEvents = [];
@@ -26,7 +39,7 @@ appendAuditEvent("audit-seal", session.events.at(-1)?.timestamp ?? session.start
 const auditPath = path.join(destination, "audit.jsonl");
 await writeFile(auditPath, `${auditEvents.map(canonicalJson).join("\n")}\n`, "utf8");
 const report = await generateSessionReport(auditPath, session.startedAt);
-await writeFile(path.join(destination, "session.json"), `${JSON.stringify({ ...session, staticLabel: "Read-only recorded security session" }, null, 2)}\n`, "utf8");
+await writeFile(path.join(destination, "session.json"), `${JSON.stringify({ ...session, metrics: snapshotMetrics, staticLabel: "Read-only recorded security session" }, null, 2)}\n`, "utf8");
 await writeFile(path.join(destination, "scenarios.json"), scenarios, "utf8");
 await writeFile(path.join(destination, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
 await writeFile(path.join(destination, "report.md"), renderMarkdownReport(report), "utf8");

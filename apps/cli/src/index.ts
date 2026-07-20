@@ -11,7 +11,7 @@ import { Command } from "commander";
 import { parse } from "yaml";
 import { z, ZodError } from "zod";
 import { startApi } from "@toolbastion/api";
-import { readAuditEvents, redactAuditPayload, resolveAuditReadFile, verifyAuditFile } from "@toolbastion/audit";
+import { readAuditEvents, redactAuditPayload, resolveAuditReadFile, verifyAuditFile, verifyReceipt } from "@toolbastion/audit";
 import { findValueBoundsViolation, ToolBastionProxy, ToolBastionTargetClient } from "@toolbastion/core";
 import { createTrustBaseline, diffTrustBaseline, readTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
 import { applyProposal, readProposal, rejectProposal, runCodexRemediation, saveProposal, verifyRemediation, type RemediationRequest } from "@toolbastion/remediation";
@@ -73,18 +73,38 @@ policy.command("validate")
   });
 
 const trust = program.command("trust").description("manage persistent MCP tool trust");
-for (const name of ["create", "approve"] as const) {
-  trust.command(name)
-    .description(`${name} the current target tool metadata`)
-    .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
-    .action(async ({ config: configPath }: { config: string }) => {
-      const { config, tools } = await discover(configPath);
-      const baseline = createTrustBaseline(config.target.name, tools);
-      const file = trustFile(config.project_root);
-      await writeTrustBaseline(file, baseline);
-      process.stdout.write(`${name === "create" ? "CREATED" : "APPROVED"} ${file}\nBaseline ${baseline.baselineHash}\nTools ${baseline.tools.length}\n`);
-    });
-}
+trust.command("create")
+  .description("create an initial target-specific trust baseline; refuses to overwrite one")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .action(async ({ config: configPath }: { config: string }) => {
+    const { config, tools } = await discover(configPath);
+    const file = trustFile(config.project_root);
+    try { await access(file, constants.F_OK); throw new Error("Trust baseline already exists; inspect its diff and use trust approve --yes"); }
+    catch (error) { if (error instanceof Error && error.message.startsWith("Trust baseline")) throw error; }
+    const baseline = createTrustBaseline(config.target.name, tools);
+    await writeTrustBaseline(file, baseline);
+    process.stdout.write(`CREATED ${file}\nBaseline ${baseline.baselineHash}\nTools ${baseline.tools.length}\n`);
+  });
+trust.command("approve")
+  .description("approve a reviewed metadata diff for the configured target")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .requiredOption("--yes", "confirm that the displayed target metadata diff was reviewed")
+  .option("--actor <identity>", "operator identity", process.env.USERNAME ?? process.env.USER ?? "unknown")
+  .action(async ({ config: configPath, yes, actor }: { config: string; yes: boolean; actor: string }) => {
+    if (!yes) throw new Error("trust approve requires --yes after reviewing the displayed diff");
+    const { config, tools } = await discover(configPath);
+    const file = trustFile(config.project_root);
+    const prior = await readTrustBaseline(file);
+    const diff = diffTrustBaseline(prior, tools, config.target.name);
+    process.stdout.write(`${JSON.stringify(diff, null, 2)}\n`);
+    if (diff.poisoned.length > 0) throw new Error("Refusing to approve poisoned tool metadata");
+    const baseline = createTrustBaseline(config.target.name, tools);
+    await writeTrustBaseline(file, baseline);
+    const auditDirectory = projectDirectory(config.project_root, config.audit.directory, "audit.directory");
+    await mkdir(auditDirectory, { recursive: true });
+    await appendFile(path.join(auditDirectory, "trust-approvals.jsonl"), `${JSON.stringify({ timestamp: new Date().toISOString(), actor, targetName: config.target.name, priorBaselineHash: prior.baselineHash, baselineHash: baseline.baselineHash, diff })}\n`, { encoding: "utf8", mode: 0o600 });
+    process.stdout.write(`APPROVED ${file}\nBaseline ${baseline.baselineHash}\nActor ${actor}\n`);
+  });
 trust.command("inspect")
   .description("inspect the approved baseline")
   .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
@@ -110,6 +130,15 @@ audit.command("verify <session-id>")
     const file = await resolveAuditReadFile(config.project_root, config.audit.directory, sessionId);
     const verification = await verifyAuditFile(file);
     process.stdout.write(`${JSON.stringify({ sessionId, file, ...verification }, null, 2)}\n`);
+    if (!verification.valid) process.exitCode = 2;
+  });
+
+const receipt = program.command("receipt").description("verify signed per-call receipts");
+receipt.command("verify <file>")
+  .description("verify receipt schema, Ed25519 signature, hashes, and lifecycle consistency")
+  .action(async (file: string) => {
+    const verification = verifyReceipt(JSON.parse(await readFile(file, "utf8")));
+    process.stdout.write(`${JSON.stringify({ file: path.resolve(file), ...verification }, null, 2)}\n`);
     if (!verification.valid) process.exitCode = 2;
   });
 

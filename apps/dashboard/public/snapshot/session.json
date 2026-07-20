@@ -95,5 +95,16 @@
       "cacheHit": false
     }
   ],
+  "metrics": {
+    "totalToolCalls": 6,
+    "allows": 2,
+    "blocks": 2,
+    "askUser": 0,
+    "quarantines": 1,
+    "deterministicResolutionRate": 1,
+    "judgeEscalationRate": 0,
+    "judgeTokens": 0,
+    "cacheHitRate": 0
+  },
   "staticLabel": "Read-only recorded security session"
 }

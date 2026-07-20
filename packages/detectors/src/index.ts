@@ -276,7 +276,9 @@ export async function inspectArguments(toolName: string, args: Record<string, un
   let requiresTargetEgressGuard = isNetworkToolName(toolName) || isCommandToolName(toolName);
   for (const located of stringsIn(args)) {
     if (hasPathSemantics(located)) findings.push(...await inspectPath(located.value, located.fieldPath, config));
-    const networkDestination = hasUrlSemantics(located) || looksLikeNetworkLiteral(located.value) || looksLikeBareHostname(located.value);
+    const networkDestination = hasUrlSemantics(located)
+      || looksLikeNetworkLiteral(located.value)
+      || (isNetworkToolName(toolName) && !hasPathSemantics(located) && looksLikeBareHostname(located.value));
     if (networkDestination) findings.push(...inspectNetworkAddress(located.value, located.fieldPath, config));
     if (hasShellSemantics(toolName, located)) {
       findings.push(...inspectShell(located.value, located.fieldPath));

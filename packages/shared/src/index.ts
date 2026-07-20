@@ -9,7 +9,11 @@ export const runtimeModeSchema = z.enum(["shadow", "interactive", "enforce"]);
 export type RuntimeMode = z.infer<typeof runtimeModeSchema>;
 export const requestDecisionSchema = z.enum(["ALLOW", "ASK_USER", "BLOCK"]);
 export type RequestDecision = z.infer<typeof requestDecisionSchema>;
-export const outputDecisionSchema = z.enum(["PASS", "REDACT", "QUARANTINE"]);
+export const authorizationDecisionSchema = z.enum(["ALLOW", "ASK_USER", "BLOCK_BEFORE_EXECUTION"]);
+export type AuthorizationDecision = z.infer<typeof authorizationDecisionSchema>;
+export const executionStateSchema = z.enum(["NOT_DISPATCHED", "DISPATCHED", "COMPLETED", "FAILED", "TIMED_OUT", "UNKNOWN"]);
+export type ExecutionState = z.infer<typeof executionStateSchema>;
+export const outputDecisionSchema = z.enum(["NOT_INSPECTED", "PASS", "REDACT", "QUARANTINE"]);
 export type OutputDecision = z.infer<typeof outputDecisionSchema>;
 export const riskLevelSchema = z.enum(["none", "low", "medium", "high", "critical"]);
 export type RiskLevel = z.infer<typeof riskLevelSchema>;
@@ -77,6 +81,38 @@ export const auditEventSchema = z.object({
   eventHash: z.string()
 }).strict();
 export type AuditEvent = z.infer<typeof auditEventSchema>;
+
+export const bastionReceiptSchema = z.object({
+  version: z.literal(1),
+  sessionId: z.string().min(1),
+  callId: z.string().min(1),
+  toolName: z.string().min(1),
+  toolManifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+  schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
+  policyHash: z.string().regex(/^[a-f0-9]{64}$/),
+  argsHash: z.string().regex(/^[a-f0-9]{64}$/),
+  authorizationDecision: authorizationDecisionSchema,
+  executionState: executionStateSchema,
+  outputDecision: outputDecisionSchema,
+  judge: z.object({
+    requestedModel: z.string().min(1),
+    responseModel: z.string().min(1).optional(),
+    offlineReplay: z.boolean(),
+    subchecks: z.array(z.object({ checkName: z.string(), verdict: z.string(), riskLevel: riskLevelSchema }).strict()),
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    latencyMs: z.number().nonnegative()
+  }).strict().optional(),
+  startedAt: z.string().datetime({ offset: true }),
+  completedAt: z.string().datetime({ offset: true }).optional(),
+  signature: z.object({
+    algorithm: z.literal("ed25519"),
+    keyId: z.string().regex(/^[a-f0-9]{64}$/),
+    publicKey: z.string().min(1),
+    value: z.string().min(1)
+  }).strict()
+}).strict();
+export type BastionReceipt = z.infer<typeof bastionReceiptSchema>;
 
 const remediationReasoningSchema = z.string().trim().min(1).max(4_000);
 

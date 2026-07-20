@@ -116,6 +116,12 @@ describe("schema-independent argument inspection", () => {
     expect(await inspectArguments("echo", { input: "release notes for design/engineering" }, config)).toEqual([]);
   });
 
+  it("does not treat dotted filenames as network hosts outside a network context", async () => {
+    for (const value of ["report.pdf", "config.json", "archive.tar", "package-lock.json", "index.test.ts"]) {
+      expect(await inspectArguments("read_project_file", { path: value }, config)).toEqual([]);
+    }
+  });
+
   it("blocks traversal hidden inside a generic relative path", async () => {
     const result = await evaluateDeterministic("read_project_file", { source: "workspace/../../outside.txt" }, config);
     expect(result.resolution).toBe("HARD_DENY");

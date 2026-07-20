@@ -13,12 +13,27 @@ import {
 } from "@toolbastion/shared";
 import { z } from "zod";
 
+function scopedResources(value: unknown, key = ""): string[] {
+  if (typeof value === "string") return /(?:path|file|directory|folder|cwd|destination|url|uri|endpoint|host|hostname|address)$/i.test(key) ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap((item) => scopedResources(item, key));
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).flatMap(([childKey, child]) => scopedResources(child, childKey));
+  }
+  return [];
+}
+
 export async function evaluateDeterministic(toolName: string, args: Record<string, unknown>, config: ToolBastionConfig): Promise<DeterministicResult> {
   const findings = await inspectArguments(toolName, args, config);
   const rule = config.tools.rules[toolName];
   const action = rule?.action ?? config.tools.default;
   if (action === "block") {
     findings.push({ detector: "policy", category: "tool_blocked_by_policy", severity: "critical", message: "Tool is explicitly blocked by policy" });
+  }
+  if (action === "allow_when_in_scope") {
+    const resources = scopedResources(args);
+    if (resources.length === 0) {
+      findings.push({ detector: "policy", category: "scope_required", severity: "high", message: "allow_when_in_scope requires an identifiable project path resource" });
+    }
   }
   const riskLevel = highestRisk(findings);
   const hardDeny = findings.some((item) => item.severity === "high" || item.severity === "critical");
