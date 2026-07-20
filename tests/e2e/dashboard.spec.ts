@@ -12,8 +12,9 @@ test.afterAll(async () => app.close());
 
 test("landing page opens the console, where routes, Attack Lab, and report download work", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Secure MCP tools before they execute." })).toBeVisible();
-  await expect(page.getByText("A tool call is never allowed to bypass the enforcement path.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Make every MCP action earn execution." })).toBeVisible();
+  await expect(page.getByText("A target can only receive a call after the gateway produces an allow decision.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Security receipts, not security theater." })).toBeVisible();
   await page.getByRole("button", { name: "Open security console" }).click();
   await expect(page.getByRole("heading", { name: "Runtime overview" })).toBeVisible();
   for (const [label, target] of [["Overview", "overview"], ["Session timeline", "timeline"], ["Attack Lab", "attack-lab"], ["Policy", "policy"], ["Reports", "reports"]] as const) {
@@ -32,6 +33,17 @@ test("landing page opens the console, where routes, Attack Lab, and report downl
   await page.getByRole("link", { name: /Markdown report/ }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/toolbastion-.*\.md/);
+});
+
+test("landing navigation leads to the decision receipt", async ({ page }) => {
+  await page.goto("/");
+  const boundaryLink = page.getByRole("link", { name: "The boundary", exact: true });
+  await expect(boundaryLink).toHaveAttribute("href", "#boundary");
+  await boundaryLink.click();
+  await expect(page).toHaveURL(/#boundary$/);
+  await expect(page.getByRole("heading", { name: "Security receipts, not security theater." })).toBeVisible();
+  await expect(page.locator(".receipt-step")).toHaveCount(3);
+  await expect(page.locator(".decision-step")).toContainText("BLOCKED");
 });
 
 test("static dashboard fallback is clearly read-only", async ({ page }) => {

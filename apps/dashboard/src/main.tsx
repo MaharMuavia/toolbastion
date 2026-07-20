@@ -77,68 +77,71 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
     <header className="landing-header">
       <a className="brand landing-brand" href="#top" aria-label="ToolBastion home"><div className="mark"><Icon name="shield" /></div><div><strong>ToolBastion</strong><span>MCP security gateway</span></div></a>
       <nav className="landing-nav" aria-label="Product navigation">
+        <a href="#boundary">The boundary</a>
         <a href="#how-it-works">How it works</a>
-        <a href="#proof">Proof</a>
-        <a href="#demo-path">Demo path</a>
+        <a href="#proof">Evidence</a>
       </nav>
       <button className="header-console-button" type="button" onClick={onOpenConsole}>Open security console</button>
     </header>
 
     <section className="landing-hero" aria-labelledby="landing-title">
       <div className="landing-copy">
-        <p className="eyebrow">ZERO-TRUST MCP ENFORCEMENT</p>
-        <h1 id="landing-title">Secure MCP tools<br /><span>before they execute.</span></h1>
-        <p className="landing-lede">ToolBastion is the enforcement boundary between an AI agent and its tools. It validates every call, blocks deterministic threats, isolates targets, and records redacted evidence.</p>
+        <p className="eyebrow">THE EXECUTION FIREWALL FOR MCP</p>
+        <h1 id="landing-title">Make every MCP action<br /><span>earn execution.</span></h1>
+        <p className="landing-lede">ToolBastion turns an AI tool call into a verifiable decision. It validates the request, stops deterministic threats, confines the target, and creates a redacted security receipt.</p>
         <div className="landing-actions">
-          <button className="primary-action" type="button" onClick={onOpenConsole}>Launch the security console <span aria-hidden="true">→</span></button>
-          <a className="secondary-action" href="#proof">See the proof</a>
+          <button className="primary-action" type="button" onClick={onOpenConsole}>Inspect a decision <span aria-hidden="true">→</span></button>
+          <a className="secondary-action" href="#boundary">See the boundary</a>
         </div>
         <ul className="trust-points" aria-label="Core security capabilities">
           <li><span><Icon name="shield" /></span>Pre-execution enforcement</li>
-          <li><span><Icon name="policy" /></span>Validated policy boundaries</li>
-          <li><span><Icon name="timeline" /></span>Redacted audit evidence</li>
+          <li><span><Icon name="policy" /></span>Bounded tool access</li>
+          <li><span><Icon name="timeline" /></span>Inspectable receipts</li>
         </ul>
       </div>
       <div className="landing-visual" aria-label="Every MCP tool call passes through ToolBastion before reaching its target">
         <div className="visual-grid"></div>
-        <div className="visual-caption"><span className="live-dot"></span> Enforcement path</div>
+        <div className="visual-caption"><span className="live-dot"></span> Decision path</div>
         <div className="flow-node agent-node"><small>01</small><strong>AI agent</strong><span>Tool call request</span></div>
         <div className="flow-line flow-line-one"></div>
-        <div className="flow-node bastion-node"><div className="mini-mark"><Icon name="shield" /></div><small>02</small><strong>ToolBastion</strong><span>Inspect and decide</span></div>
+        <div className="flow-node bastion-node"><div className="mini-mark"><Icon name="shield" /></div><small>02</small><strong>ToolBastion</strong><span>Inspect, decide, record</span></div>
         <div className="security-layers"><span>Policy</span><span>Trust</span><span>Output</span><span>Audit</span></div>
         <div className="flow-line flow-line-two"></div>
         <div className="flow-node target-node"><small>03</small><strong>MCP target</strong><span>Only safe execution</span></div>
-        <p className="visual-note">A tool call is never allowed to bypass the enforcement path.</p>
+        <div className="decision-receipt" aria-hidden="true"><span>Decision receipt</span><strong>Policy checked</strong><small>redacted · tamper-evident</small></div>
+        <p className="visual-note">A target can only receive a call after the gateway produces an allow decision.</p>
       </div>
     </section>
 
     <section className="landing-section how-it-works" id="how-it-works" aria-labelledby="how-it-works-title">
-      <div><p className="eyebrow">HOW IT WORKS</p><h2 id="how-it-works-title">One boundary. Four security stages.</h2></div>
+      <div><p className="eyebrow">THE CONTROL LOOP</p><h2 id="how-it-works-title">Not a dashboard. A decision system.</h2></div>
       <div className="stage-grid">
         <article><span>01</span><h3>Validate</h3><p>Tool schemas, arguments, metadata, and configuration are treated as untrusted input.</p></article>
-        <article><span>02</span><h3>Decide</h3><p>Deterministic rules stop known-dangerous requests before a model or target can act.</p></article>
-        <article><span>03</span><h3>Contain</h3><p>Docker targets run without network access and with a reduced execution surface.</p></article>
-        <article><span>04</span><h3>Prove</h3><p>Audit artifacts are redacted and tamper-evident so a decision can be inspected later.</p></article>
+        <article><span>02</span><h3>Gate</h3><p>Deterministic rules stop known-dangerous requests before a model or target can act.</p></article>
+        <article><span>03</span><h3>Contain</h3><p>Containerized targets can run without network access and with a reduced execution surface.</p></article>
+        <article><span>04</span><h3>Receipt</h3><p>Redacted, tamper-evident audit artifacts preserve the reason behind every decision.</p></article>
       </div>
     </section>
 
     <section className="proof-section" id="proof" aria-labelledby="proof-title">
-      <div className="proof-copy"><p className="eyebrow">VERIFIABLE, NOT THEATRICAL</p><h2 id="proof-title">A demo should show what is actually enforced.</h2><p>The console uses local runtime evidence when the API is available and switches to clearly-labelled recorded fixtures when it is not. The security path itself does not depend on the dashboard.</p><a href="#demo-path">Follow the demo path <span aria-hidden="true">↓</span></a></div>
+      <div className="proof-copy"><p className="eyebrow">VERIFIABLE, NOT THEATRICAL</p><h2 id="proof-title">Every decision leaves a security receipt.</h2><p>The console exposes local runtime evidence when available and clearly labels static snapshots when it is not. The enforcement path itself runs independently from this interface.</p><a href="#boundary">Explore the decision path <span aria-hidden="true">→</span></a></div>
       <div className="proof-cards">
         <article><span className="proof-icon"><Icon name="shield" /></span><p>Hard deny</p><strong>Before execution</strong><small>Deterministic blocks cannot be overridden by a model.</small></article>
-        <article><span className="proof-icon"><Icon name="activity" /></span><p>Target isolation</p><strong>Network disabled</strong><small>Docker targets have no default egress path.</small></article>
+        <article><span className="proof-icon"><Icon name="activity" /></span><p>Target isolation</p><strong>No default egress</strong><small>Containerized targets can run without a network path.</small></article>
         <article><span className="proof-icon"><Icon name="timeline" /></span><p>Audit evidence</p><strong>Secrets redacted</strong><small>Reports preserve decisions without persisting raw credentials.</small></article>
       </div>
     </section>
 
-    <section className="demo-path" id="demo-path" aria-labelledby="demo-path-title">
-      <div className="demo-path-intro"><p className="eyebrow">RECORDING RUNBOOK</p><h2 id="demo-path-title">A three-minute demo path.</h2><p>Use this page to establish the architecture, then open the console to show real enforcement evidence.</p></div>
-      <ol>
-        <li><span>01</span><div><strong>Set the boundary</strong><p>Show the agent-to-target path and why ToolBastion sits in the middle.</p></div></li>
-        <li><span>02</span><div><strong>Open the security console</strong><p>Point out the session status, policy limits, and independent enforcement path.</p></div></li>
-        <li><span>03</span><div><strong>Run Attack Lab</strong><p>Replay controlled threats and download the resulting redacted evidence.</p></div></li>
-      </ol>
-      <button className="primary-action demo-console-button" type="button" onClick={onOpenConsole}>Start the live demo <span aria-hidden="true">→</span></button>
+    <section className="boundary-section" id="boundary" aria-labelledby="boundary-title">
+      <div className="boundary-copy"><p className="eyebrow">THE BASTION DIFFERENCE</p><h2 id="boundary-title">Security receipts, not security theater.</h2><p>A raw tool request is not trusted because it came from an agent. ToolBastion captures the intent, applies layered controls, and records why the target did—or did not—receive the call.</p><button className="primary-action boundary-console-button" type="button" onClick={onOpenConsole}>Inspect the security console <span aria-hidden="true">→</span></button></div>
+      <div className="receipt-board" aria-label="A sample ToolBastion decision receipt">
+        <div className="receipt-board-head"><span className="live-dot"></span><span>Decision receipt</span><small>event chain intact</small></div>
+        <div className="receipt-steps">
+          <article className="receipt-step intent-step"><span>01 · Incoming intent</span><strong>filesystem.write</strong><p>Arguments normalized and inspected as untrusted input.</p><small>REQUEST FINGERPRINTED</small></article>
+          <article className="receipt-step decision-step"><span>02 · Policy verdict</span><strong>BLOCKED</strong><p>Deterministic hard deny matched before target execution.</p><small>RULE: PATH_TRAVERSAL</small></article>
+          <article className="receipt-step evidence-step"><span>03 · Evidence</span><strong>Redacted record</strong><p>Decision, reason, and integrity data are retained for review.</p><small>AUDIT TRAIL SEALED</small></article>
+        </div>
+      </div>
     </section>
 
     <footer className="landing-footer"><span>ToolBastion v0.1.0</span><span>Enforcement runs independently from this interface.</span><a href="https://github.com/MaharMuavia/toolbastion" target="_blank" rel="noreferrer">View source</a></footer>
