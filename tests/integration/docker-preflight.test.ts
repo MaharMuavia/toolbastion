@@ -31,7 +31,7 @@ describe("Docker target preflight", () => {
     });
 
     const proxy = new ToolBastionProxy(config);
-    await expect(proxy.runStdio()).rejects.toThrow(/Docker (is unavailable|image inspection failed|image is not available)/);
+    await expect(proxy.runStdio()).rejects.toThrow(/Docker (is unavailable|image inspection failed|image inspection timed out|image is not available)/);
     await expect(access(path.join(projectRoot, ".toolbastion", "audit"))).rejects.toThrow();
   }, 15_000);
 });
