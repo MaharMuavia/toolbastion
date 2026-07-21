@@ -1,36 +1,38 @@
 # Submission checklist
 
+Status reflects direct command evidence recorded on 2026-07-21. `Verified` means the cited command completed successfully in this verification pass; `Not reverified` is deliberately not a passing claim.
+
 | Requirement | Status | Evidence | Remaining action |
 | --- | --- | --- | --- |
-| Working MCP security proxy | Complete | `packages/core`, forwarding/enforcement integration tests | None |
-| Deterministic policy engine | Complete | `packages/policy`, `packages/detectors`, 160-case curated and seeded corpus | None |
-| GPT-5.6 integration | Live verified | `packages/judge`, `scripts/judge-smoke.mjs --record`, `reports/live-judge-proof.json` | Regenerate the sanitized proof immediately before recording the final demo |
-| Codex integration | Complete except feedback ID | `packages/remediation`, schema, real `codex exec` smoke | Run `/feedback` in primary task |
-| CLI | Complete for v1 | `apps/cli`, README command reference | None |
-| API and React dashboard | Complete | API integration tests, Playwright tests, screenshots | None |
-| Vulnerable demo and fixtures | Complete | `examples/vulnerable-server`, attack/benign/evaluation fixtures | None |
-| Automated tests | Complete for local release | unit, integration, E2E, process cleanup, error handling | Rerun in hosted CI after push |
-| Offline keyless demo | Complete | `npm run demo:offline`: direct synthetic-canary/loopback control, protected non-execution counters, sealed proof | None |
-| Target-side network containment | CI gate configured; local daemon verification required | Docker no-network target profile, host-collector proof test, unit construction checks, GitHub Actions gate | Run the Docker isolation test with a running Docker daemon, then verify the configured CI gate after push |
-| Audit tamper evidence | Complete for v2 start/event/seal logs | `npm run verify:snapshot`, CLI `audit verify` | Use an external signing or attestation service if non-repudiation is required; whole-chain replacement remains out of scope |
-| Documentation and threat model | Complete | README, architecture, evaluation, security assumptions | None |
-| Codex/human decision record | Complete | `docs/codex-collaboration.md`, `docs/human-decisions.md`, `DECISIONS.md` | Add feedback ID |
-| Screenshots | Complete | `docs/screenshots` from real Playwright session | Final privacy inspection before upload |
-| Permissive license | Complete | `LICENSE`, Apache-2.0 package metadata | None |
-| Prebuilt judge artifact | Locally verified; publication pending | Dockerfile, judge compose, release workflow | Verify final GHCR pull after tag workflow |
-| Hosted read-only dashboard | Publication target configured | `.github/workflows/pages.yml` | Verify public URL after push |
-| Submission description | Complete with publication targets | `docs/submission-description.md` | Verify generated URLs |
-| Public video under 3 minutes | Script/preparation complete | `docs/demo-script.md` | Owner records, uploads, and verifies URL |
-| Repository visibility | Publication authorized | `https://github.com/MaharMuavia/toolbastion` | Verify unauthenticated clone after push |
-| GitHub Release | Workflow ready | `.github/workflows/release.yml` | Verify assets and checksums after tag workflow |
-| `/feedback` Codex Session ID | Not recorded | `docs/feedback-session.md` | Human must run `/feedback` and copy returned ID |
+| Working MCP security proxy | Verified | `npm.cmd run demo:offline` printed all nine controls as `PASS` and `VERDICT Enforcement proof passed`. | None. |
+| Deterministic policy engine | Verified | `npm.cmd run artifact:prepare` reported `160` total fixtures, `160` passed, `0` failed. | None. |
+| GPT-5.6 integration | Live verified | `node --env-file=.env.local .\scripts\judge-smoke.mjs --record` returned `ALLOW`, model `gpt-5.6`, and all three subchecks `safe`; proof validation returned `valid:true` at `2026-07-21T08:22:37.687Z`. | None. |
+| Codex integration | Human feedback pending | No feedback session ID was supplied in this pass. | Run `/feedback` in the primary task and record the returned ID. |
+| CLI | Verified | `node ./apps/cli/dist/index.js --version` returned `0.1.3`. | None. |
+| API and React dashboard | Verified | `npm.cmd run test:e2e` returned `4 passed`; released container returned health `200`, protected version `401` without a token, and `200` with a token. | None. |
+| Vulnerable demo and fixtures | Verified | `npm.cmd run demo:offline` exercised the synthetic canary, traversal, undeclared argument, loopback exfiltration, hostile output, and credential-like output controls. | None. |
+| Automated tests | Verified | Local `npm.cmd test`: `146 passed`, `1 skipped`; release workflow `29814169400` completed successfully for commit `e9b5fa8`. | None. |
+| Offline keyless demo | Verified | `npm.cmd run demo:offline` completed with `VERDICT Enforcement proof passed`. | None. |
+| Target-side network containment | Verified | `npm.cmd run test:docker-isolation` returned `1 passed (1)`; the same gate passed in release workflow `29814169400`. | None. |
+| Audit tamper evidence | Verified | `npm.cmd run demo:offline` reported `Sealed tamper-evident audit 66 linked events verified`. | None. |
+| Documentation and threat model | Not reverified | This pass did not independently review the prose for completeness. | No new publication failure found by the release gates. |
+| Codex/human decision record | Human feedback pending | No feedback session ID was supplied in this pass. | Run `/feedback` and add its returned ID. |
+| Screenshots | Credential-pattern scan clean; visual review pending | Full-history/docs/screenshots scan returned `documentation_and_screenshots_secret_pattern_matches=0`. | Manually review the final recorded video for accidental exposure. |
+| Permissive license | Not reverified | License contents were not independently reviewed in this pass. | None. |
+| Prebuilt judge artifact | Verified | Release API returned `HTTP/2.0 200 OK`, `asset_count:6`; fresh `docker pull ghcr.io/maharmuavia/toolbastion:v0.1.3` resolved `sha256:7aa32c...`; downloaded Compose started and passed HTTP checks. | None. |
+| Hosted read-only dashboard | Verified | Pages workflow `29814132241` completed for `e9b5fa8`; direct public fetch returned `HTTP/1.1 200 OK` and `<title>ToolBastion | Secure MCP tooling</title>`. | None. |
+| Submission description | Not reverified | This pass did not independently review the submission prose. | None. |
+| Public video under 3 minutes | Human action pending | Demo script exists at `docs/demo-script.md`; no recorded video was supplied. | Record/upload the video and confirm its duration. |
+| Repository visibility | Verified | `gh repo view` returned `"visibility":"PUBLIC"`, `"isPrivate":false`; non-interactive clone with credential helpers disabled succeeded at `e9b5fa8`. | None. |
+| GitHub Release | Verified | `gh api repos/MaharMuavia/toolbastion/releases/tags/v0.1.3` returned `HTTP/2.0 200 OK`, `asset_count:6`; tag dereferences to `e9b5fa89b023dc5aabb1c677dd5a01521cb782fc`; all five SHA256SUMS entries passed. | None. |
+| `/feedback` Codex Session ID | Not recorded | No session ID was supplied in this pass. | Human must run `/feedback` and copy the returned ID into `docs/feedback-session.md`. |
 
 ## Final secret/publication gate
 
-- [ ] Inspect full Git history, screenshots, Actions settings, and release assets for secrets.
-- [ ] Confirm repository visibility is public and clone works without authentication.
-- [ ] Confirm Pages URL in a private browser window.
-- [ ] Pull the GHCR image on a clean machine and run the keyless judge compose path.
-- [ ] Verify SHA256SUMS for the GitHub Release archive.
-- [ ] Confirm YouTube runtime is below three minutes and no private notifications appear.
-- [ ] Record the exact `/feedback` Session ID in README, description, checklist, and feedback record.
+- [x] Full Git-history scan returned `full_history_secret_pattern_matches=0`; docs/screenshots scan returned `0`; downloaded release assets and extracted release source each returned `0`; GitHub Actions reported `total_count:0` repository secrets.
+- [x] Repository is public and a fresh non-interactive HTTPS clone with credential helpers disabled succeeded.
+- [x] Pages deployment for the release commit succeeded; direct unauthenticated fetch of `https://maharmuavia.github.io/toolbastion/` returned `200` with the ToolBastion title.
+- [x] Fresh GHCR pull of `v0.1.3` and the downloaded keyless judge Compose path completed successfully; health was `200`, unauthenticated API access was `401`, and authenticated version was `0.1.3`.
+- [x] `gh release download v0.1.3` followed by `sha256sum -c SHA256SUMS` returned `OK` for every checksummed release asset.
+- [ ] Confirm the public video is under three minutes and contains no accidental secret exposure.
+- [ ] Record the exact `/feedback` session ID in `docs/feedback-session.md`.
