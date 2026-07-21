@@ -117,7 +117,8 @@ try {
     readJson(paths.generatedEvaluation),
     readJson(paths.evaluation)
   ]);
-  const snapshot = await verifyAndReadAuditFile(paths.audit, undefined, session.sessionId);
+  const expectedSessionId = isSnapshotSession(session) ? session.sessionId : undefined;
+  const snapshot = await verifyAndReadAuditFile(paths.audit, undefined, expectedSessionId);
   verification = snapshot.verification;
   if (!verification.valid) errors.push(...verification.errors);
 
