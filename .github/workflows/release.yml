@@ -49,7 +49,9 @@ jobs:
         run: |
           mkdir -p release
           git archive --format=tar.gz --prefix="toolbastion-${GITHUB_REF_NAME}/" -o "release/toolbastion-${GITHUB_REF_NAME}-source.tar.gz" "${GITHUB_SHA}"
-          cp docker-compose.judge.yml docs/judge-guide.md reports/evaluation-summary.json release/
+          sed -E "s#ghcr\.io/maharmuavia/toolbastion:v[0-9]+\.[0-9]+\.[0-9]+#ghcr.io/maharmuavia/toolbastion:${GITHUB_REF_NAME}#" docker-compose.judge.yml > release/docker-compose.judge.yml
+          grep -F "ghcr.io/maharmuavia/toolbastion:${GITHUB_REF_NAME}" release/docker-compose.judge.yml
+          cp docs/judge-guide.md reports/evaluation-summary.json release/
           npm sbom --sbom-format=spdx > release/SBOM.spdx.json
           cd release
           sha256sum * > SHA256SUMS

@@ -31,8 +31,8 @@ The target users are developers and platform/security teams experimenting with l
 | Repository | `https://github.com/MaharMuavia/toolbastion` |
 | Public YouTube demo | **Pending owner recording/upload** |
 | Hosted read-only dashboard | `https://maharmuavia.github.io/toolbastion/` — verify after the Pages workflow completes |
-| Container image | `ghcr.io/maharmuavia/toolbastion:v0.1.0` — verify after the release workflow completes |
-| GitHub Release | `https://github.com/MaharMuavia/toolbastion/releases/tag/v0.1.0` — verify after the release workflow completes |
+| Container image | `ghcr.io/maharmuavia/toolbastion:<published-tag>` — verify the exact release tag after the workflow completes |
+| GitHub Release | `https://github.com/MaharMuavia/toolbastion/releases/tag/<published-tag>` — verify through the GitHub Releases API after the workflow completes |
 | `/feedback` Codex Session ID | **Not yet recorded — see `docs/feedback-session.md`** |
 
 The repository destinations are deterministic publication targets. The owner-supplied YouTube URL and `/feedback` Session ID remain explicit pending fields and are never fabricated.

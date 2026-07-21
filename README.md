@@ -28,7 +28,7 @@ ToolBastion is a local execution firewall and evidence layer for one stdio MCP s
 
 ToolBastion supports one local stdio target per proxy process; it is not a remote MCP gateway, general OS sandbox, or egress proxy. A dispatched target call that fails, times out, or has an unconfirmed termination is reported through its execution state (`FAILED`, `TIMED_OUT`, or `UNKNOWN`) rather than as a pre-execution block. Docker isolation uses `--network=none`, so policy allowlisting does not grant target egress. GPT checks are privacy-preserving semantic assessments, not live-model accuracy evidence.
 
-Release: `v0.1.0` · Category: Developer Tools · License: Apache-2.0
+Release: tagged GitHub Release · Category: Developer Tools · License: Apache-2.0
 
 > [!IMPORTANT]
 > In `enforce` and `interactive` modes, deterministic hard denies always win. GPT-5.6 is consulted only for genuinely ambiguous calls, and model failure closes the gate in enforce mode. `shadow` deliberately forwards recorded would-be decisions for evaluation.

@@ -12,11 +12,12 @@ Verify the workflow URL in an unauthenticated browser and confirm the `READ-ONLY
 
 `.github/workflows/release.yml` reruns every release gate for `v*` tags, builds the isolated target probe, proves that its loopback request cannot reach a host collector, regenerates and verifies the committed snapshot, scans tracked files for selected OpenAI, GitHub, and AWS access-key patterns, builds a source archive from the tagged commit, emits SHA-256 checksums and an SPDX SBOM, publishes `ghcr.io/maharmuavia/toolbastion:<tag>`, and creates a GitHub Release. All third-party GitHub Actions are pinned to immutable commit SHAs.
 
-For `v0.1.0`, verify all of the following:
+For a published release tag, set `$tag` to the exact tag and verify all of the following:
 
 ```bash
-gh release view v0.1.0 --repo MaharMuavia/toolbastion
-docker pull ghcr.io/maharmuavia/toolbastion:v0.1.0
+tag=vX.Y.Z
+gh release view "$tag" --repo MaharMuavia/toolbastion
+docker pull "ghcr.io/maharmuavia/toolbastion:$tag"
 docker compose -f docker-compose.judge.yml up
 ```
 
