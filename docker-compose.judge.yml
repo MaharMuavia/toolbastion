@@ -1,6 +1,6 @@
 services:
   judge:
-    image: ${TOOLBASTION_IMAGE:-ghcr.io/maharmuavia/toolbastion:v0.1.1}
+    image: ${TOOLBASTION_IMAGE:-ghcr.io/maharmuavia/toolbastion:v0.1.4}
     pull_policy: ${TOOLBASTION_PULL_POLICY:-always}
     environment:
       TOOLBASTION_API_TOKEN: ${TOOLBASTION_API_TOKEN:?Set a 32+ character base64url token before starting the dashboard}

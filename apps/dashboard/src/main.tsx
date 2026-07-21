@@ -152,7 +152,7 @@ function Landing({ onOpenConsole }: { onOpenConsole: () => void }) {
       </div>
     </section>
 
-    <footer className="landing-footer"><span>ToolBastion v0.1.3</span><span>Enforcement runs independently from this interface.</span><a href="https://github.com/MaharMuavia/toolbastion" target="_blank" rel="noreferrer">View source</a></footer>
+    <footer className="landing-footer"><span>ToolBastion v0.1.4</span><span>Enforcement runs independently from this interface.</span><a href="https://github.com/MaharMuavia/toolbastion" target="_blank" rel="noreferrer">View source</a></footer>
   </main>;
 }
 
@@ -346,7 +346,7 @@ function App() {
         ["Redacted audit JSONL", readOnly ? snapshotUrl("audit.jsonl") : `/api/sessions/${session.sessionId}/audit`],
         ["Evaluation summary", readOnly ? snapshotUrl("evaluation-summary.json") : "/api/evaluation"]
       ].map(([label, href]) => <a key={label} href={href} download onClick={(event) => void downloadArtifact(event, href!)}>{label}<span><Icon name="download" /></span></a>)}</div></section>
-      <footer><span>ToolBastion v0.1.3</span><span>Dashboard is outside the enforcement path</span></footer>
+      <footer><span>ToolBastion v0.1.4</span><span>Dashboard is outside the enforcement path</span></footer>
     </main>
   </div>;
 }

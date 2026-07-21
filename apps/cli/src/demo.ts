@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { stringify } from "yaml";
 import { auditFilePath, verifyAuditFile } from "@toolbastion/audit";
-import { ToolBastionTargetClient } from "@toolbastion/core";
+import { resolveTargetArtifactIdentity, ToolBastionTargetClient } from "@toolbastion/core";
 import { createTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
 import { toolbastionConfigSchema } from "@toolbastion/shared";
 
@@ -175,7 +175,7 @@ export async function runProfessionalDemo(workspace: string, options: { cleanup:
       slow_tool: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
       slow_child_tree: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: true, destructive: false }
     };
-    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities));
+    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities, await resolveTargetArtifactIdentity(target, projectRoot)));
 
     const config = toolbastionConfigSchema.parse({
       version: 1,

@@ -1,28 +1,34 @@
 {
   "capturedAt": "2026-07-21",
-  "workspace": "ToolBastion",
+  "releaseCandidate": "0.1.4",
+  "releaseTag": "v0.1.4",
+  "evidenceScope": "uncommitted release-candidate workspace; external release claims are pending",
   "commands": [
-    { "command": "npm.cmd ci", "exitCode": 0, "status": "passed" },
+    { "command": "npm.cmd ci --no-fund --no-audit", "exitCode": 0, "status": "passed" },
     { "command": "npm.cmd run build", "exitCode": 0, "status": "passed" },
     { "command": "npm.cmd run lint", "exitCode": 0, "status": "passed" },
     { "command": "npm.cmd run typecheck", "exitCode": 0, "status": "passed" },
-    { "command": "npm.cmd test", "exitCode": 0, "status": "passed", "tests": { "passed": 169, "skipped": 1 }, "note": "Captured before the separately added detector-mutation suite." },
-    { "command": "npx.cmd vitest run tests/unit/detector-mutation.test.ts", "exitCode": 0, "status": "passed", "tests": { "passed": 3 } },
-    { "command": "npx.cmd playwright test --reporter=list", "exitCode": 0, "status": "passed", "tests": { "passed": 4 } },
+    { "command": "npm.cmd run test:unit -- --reporter=dot", "exitCode": 0, "status": "passed", "tests": { "passed": 150, "filesPassed": 20 } },
+    { "command": "npm.cmd run test:integration -- --reporter=dot", "exitCode": 0, "status": "passed", "tests": { "passed": 38, "skipped": 1, "filesPassed": 7, "filesSkipped": 1 } },
+    { "command": "npm.cmd test -- --reporter=dot", "exitCode": 0, "status": "passed", "tests": { "passed": 188, "skipped": 1, "filesPassed": 27, "filesSkipped": 1 } },
+    { "command": "npx.cmd vitest run tests/unit/adversarial-fast-check.test.ts", "exitCode": 0, "status": "passed", "propertyTestCount": 6 },
+    { "command": "npm.cmd run test:docker-isolation", "exitCode": 0, "status": "passed", "tests": { "passed": 1 } },
+    { "command": "npm.cmd run test:e2e -- --reporter=line", "exitCode": 0, "status": "passed", "tests": { "passed": 4 } },
     { "command": "npm.cmd run evaluate", "exitCode": 0, "status": "passed", "coverage": { "fixtures": 160, "passed": 160, "failed": 0 } },
+    { "command": "npm.cmd run snapshot", "exitCode": 0, "status": "passed" },
     { "command": "npm.cmd run verify:snapshot", "exitCode": 0, "status": "passed", "auditEvents": 9 },
-    { "command": "npm.cmd run test:docker-isolation", "exitCode": 1, "status": "blocked", "reason": "Docker configuration/buildx access denied" },
-    { "command": "npm.cmd audit --audit-level=high", "exitCode": 1, "status": "blocked", "reason": "registry audit endpoint/cache-log access unavailable" }
+    { "command": "npm.cmd audit --audit-level=high", "exitCode": 0, "status": "passed", "vulnerabilities": 0 },
+    { "command": "tracked-file secret scan", "exitCode": 0, "status": "passed", "matches": 0 },
+    { "command": "git diff --check", "exitCode": 0, "status": "passed" }
   ],
   "artifacts": {
-    "snapshotEvaluationSha256": "8d13b9eb3aa73e2ab103281186455fb6feab8d0b715156587078c23daf6894db",
+    "evaluationSha256": "8d13b9eb3aa73e2ab103281186455fb6feab8d0b715156587078c23daf6894db",
     "snapshotAuditSha256": "2a644b52753ea0825bcc3d18cacb836123c4a42e1f6e62ae66fc5a7319c59443"
   },
-  "unresolvedRisks": [
-    "Docker isolation was not exercised locally.",
-    "Dependency audit could not contact npm's audit service.",
-    "No authenticated allowlisted egress proxy exists; enforce mode rejects that capability.",
-    "Release supply-chain gates (digest pinning, multi-arch, provenance, signing, scanning, CodeQL, dependency review) remain incomplete.",
-    "External publication, signed-release permissions, video upload, feedback ID, and independent review require human authority."
+  "remainingBlockers": [
+    "The final release commit and v0.1.4 tag have not been created, so external release lineage is not claimed.",
+    "GitHub release, container publication/digest verification, and release provenance/signing require external authority.",
+    "YouTube video recording/upload and the Codex /feedback session ID require human action.",
+    "No authenticated allowlisted egress proxy exists; enforce mode rejects that capability."
   ]
 }

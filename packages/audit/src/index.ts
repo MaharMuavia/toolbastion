@@ -1,5 +1,5 @@
 import { createPrivateKey, createPublicKey, randomUUID, sign, verify } from "node:crypto";
-import { mkdir, open, readFile, realpath, stat, type FileHandle } from "node:fs/promises";
+import { mkdir, open, readFile, realpath, stat, unlink, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { auditEventSchema, bastionReceiptSchema, canonicalJson, sha256, type AuditEvent, type BastionReceipt } from "@toolbastion/shared";
 
@@ -60,7 +60,9 @@ export function verifyReceipt(receipt: unknown, trustedPublicKeyPem?: string): {
   return { valid: errors.length === 0, errors };
 }
 
-export async function writeReceiptFile(projectRoot: string, configuredDirectory: string, receipt: BastionReceipt): Promise<string> {
+export type ReceiptWriteOptions = { failAt?: "write" | "sync" };
+
+export async function writeReceiptFile(projectRoot: string, configuredDirectory: string, receipt: BastionReceipt, options: ReceiptWriteOptions = {}): Promise<string> {
   if (!/^[A-Za-z0-9-]+$/.test(receipt.callId)) throw new Error("receipt call id contains invalid characters");
   if (path.isAbsolute(configuredDirectory)) throw new Error("receipts.directory must be relative to project_root");
   const root = await realpath(path.resolve(projectRoot));
@@ -71,8 +73,17 @@ export async function writeReceiptFile(projectRoot: string, configuredDirectory:
   if (!isWithinDirectory(root, canonicalDirectory)) throw new Error("receipts.directory resolves outside project_root");
   const filePath = path.join(canonicalDirectory, `${receipt.callId}.json`);
   const handle = await open(filePath, "wx", 0o600);
-  try { await handle.writeFile(`${canonicalJson(receipt)}\n`, "utf8"); await handle.sync(); }
-  finally { await handle.close(); }
+  try {
+    if (options.failAt === "write") throw new Error("Injected receipt persistence failure");
+    await handle.writeFile(`${canonicalJson(receipt)}\n`, "utf8");
+    if (options.failAt === "sync") throw new Error("Injected receipt persistence failure");
+    await handle.sync();
+    await handle.close();
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await unlink(filePath).catch(() => undefined);
+    throw error;
+  }
   return filePath;
 }
 

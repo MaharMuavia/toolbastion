@@ -12,7 +12,7 @@ import { parse } from "yaml";
 import { z, ZodError } from "zod";
 import { startApi } from "@toolbastion/api";
 import { readAuditEvents, resolveAuditReadFile, verifyAuditFile, verifyReceipt } from "@toolbastion/audit";
-import { findValueBoundsViolation, ToolBastionProxy, ToolBastionTargetClient } from "@toolbastion/core";
+import { findValueBoundsViolation, resolveTargetArtifactIdentity, ToolBastionProxy, ToolBastionTargetClient } from "@toolbastion/core";
 import { createTrustBaseline, diffTrustBaseline, readTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
 import { applyProposal, readProposal, rejectProposal, runCodexRemediation, saveProposal, verifyRemediation, type RemediationRequest } from "@toolbastion/remediation";
 import { generateSessionReport, renderMarkdownReport } from "@toolbastion/reports";
@@ -84,7 +84,7 @@ async function discover(configPath: string) {
   const client = new ToolBastionTargetClient(config.target);
   try {
     await client.connect();
-    return { config, tools: (await client.listTools()).tools };
+    return { config, tools: (await client.listTools()).tools, artifactIdentity: await resolveTargetArtifactIdentity(config.target, config.project_root) };
   } finally {
     await client.close();
   }
@@ -111,11 +111,11 @@ trust.command("create")
   .description("create an initial target-specific trust baseline; refuses to overwrite one")
   .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
   .action(async ({ config: configPath }: { config: string }) => {
-    const { config, tools } = await discover(configPath);
+    const { config, tools, artifactIdentity } = await discover(configPath);
     const file = trustFile(config.project_root);
     try { await access(file, constants.F_OK); throw new Error("Trust baseline already exists; inspect its diff and use trust approve --yes"); }
     catch (error) { if (error instanceof Error && error.message.startsWith("Trust baseline")) throw error; }
-    const baseline = createTrustBaseline(config.target.name, tools, config.capabilities.tools);
+    const baseline = createTrustBaseline(config.target.name, tools, config.capabilities.tools, artifactIdentity);
     await writeTrustBaseline(file, baseline);
     process.stdout.write(`CREATED ${file}\nBaseline ${baseline.baselineHash}\nTools ${baseline.tools.length}\n`);
   });
@@ -126,13 +126,13 @@ trust.command("approve")
   .option("--actor <identity>", "operator identity", process.env.USERNAME ?? process.env.USER ?? "unknown")
   .action(async ({ config: configPath, yes, actor }: { config: string; yes: boolean; actor: string }) => {
     if (!yes) throw new Error("trust approve requires --yes after reviewing the displayed diff");
-    const { config, tools } = await discover(configPath);
+    const { config, tools, artifactIdentity } = await discover(configPath);
     const file = trustFile(config.project_root);
     const prior = await readTrustBaseline(file);
-    const diff = diffTrustBaseline(prior, tools, config.capabilities.tools, config.target.name);
+    const diff = diffTrustBaseline(prior, tools, config.capabilities.tools, config.target.name, artifactIdentity);
     process.stdout.write(`${JSON.stringify(diff, null, 2)}\n`);
     if (diff.poisoned.length > 0) throw new Error("Refusing to approve poisoned tool metadata");
-    const baseline = createTrustBaseline(config.target.name, tools, config.capabilities.tools);
+    const baseline = createTrustBaseline(config.target.name, tools, config.capabilities.tools, artifactIdentity);
     await writeTrustBaseline(file, baseline);
     const auditDirectory = projectDirectory(config.project_root, config.audit.directory, "audit.directory");
     await mkdir(auditDirectory, { recursive: true });
@@ -150,22 +150,22 @@ trust.command("diff")
   .description("compare current tools with the approved baseline")
   .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
   .action(async ({ config: configPath }: { config: string }) => {
-    const { config, tools } = await discover(configPath);
-    const diff = diffTrustBaseline(await readTrustBaseline(trustFile(config.project_root)), tools, config.capabilities.tools, config.target.name);
+    const { config, tools, artifactIdentity } = await discover(configPath);
+    const diff = diffTrustBaseline(await readTrustBaseline(trustFile(config.project_root)), tools, config.capabilities.tools, config.target.name, artifactIdentity);
     process.stdout.write(`${JSON.stringify(diff, null, 2)}\n`);
-    if (diff.added.length + diff.removed.length + diff.schemaChanged.length + diff.descriptionChanged.length + diff.capabilityChanged.length + diff.poisoned.length > 0) process.exitCode = 2;
+    if (diff.artifactChanged || diff.added.length + diff.removed.length + diff.schemaChanged.length + diff.descriptionChanged.length + diff.capabilityChanged.length + diff.poisoned.length > 0) process.exitCode = 2;
   });
 trust.command("migrate")
-  .description("rebuild a reviewed v1 baseline as v2 with explicit capability contracts")
+  .description("rebuild a reviewed v1/v2 baseline with explicit capability contracts and target artifact identity")
   .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
   .requiredOption("--yes", "confirm the current target metadata and capability contracts were reviewed")
   .action(async ({ config: configPath, yes }: { config: string; yes: boolean }) => {
     if (!yes) throw new Error("trust migrate requires --yes after reviewing the displayed target capabilities");
-    const { config, tools } = await discover(configPath);
+    const { config, tools, artifactIdentity } = await discover(configPath);
     const file = trustFile(config.project_root);
-    const previous = z.object({ version: z.literal(1) }).passthrough().safeParse(JSON.parse(await readFile(file, "utf8")));
-    if (!previous.success) throw new Error("trust migrate only accepts an existing v1 baseline; use trust create or trust approve for v2 baselines");
-    const baseline = createTrustBaseline(config.target.name, tools, config.capabilities.tools);
+    const previous = z.object({ version: z.union([z.literal(1), z.literal(2)]) }).passthrough().safeParse(JSON.parse(await readFile(file, "utf8")));
+    if (!previous.success) throw new Error("trust migrate only accepts an existing v1 or v2 baseline; use trust approve for a current v3 baseline");
+    const baseline = createTrustBaseline(config.target.name, tools, config.capabilities.tools, artifactIdentity);
     await writeTrustBaseline(file, baseline);
     process.stdout.write(`MIGRATED ${file}\nBaseline ${baseline.baselineHash}\nTools ${baseline.tools.length}\n`);
   });

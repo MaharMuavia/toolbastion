@@ -1,9 +1,9 @@
 {
   "name": "toolbastion",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "license": "Apache-2.0",
-  "description": "A zero-trust security gateway for MCP tool calls.",
+  "description": "A security gateway and evidence layer for mediated MCP calls, with optional target-process containment.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/MaharMuavia/toolbastion.git"
@@ -48,6 +48,7 @@
     "@playwright/test": "^1.61.1",
     "@types/node": "24.0.14",
     "eslint": "9.31.0",
+    "fast-check": "^4.1.1",
     "globals": "16.3.0",
     "tsup": "8.5.0",
     "typescript": "5.8.3",

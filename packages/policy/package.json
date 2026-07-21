@@ -1,14 +1,16 @@
 {
   "name": "@toolbastion/policy",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "scripts": { "build": "tsup ./src/index.ts --format esm --dts --clean" },
+  "scripts": {
+    "build": "tsup ./src/index.ts --format esm --dts --clean"
+  },
   "dependencies": {
-    "@toolbastion/detectors": "0.1.3",
-    "@toolbastion/shared": "0.1.3",
+    "@toolbastion/detectors": "0.1.4",
+    "@toolbastion/shared": "0.1.4",
     "zod": "4.4.3"
   }
 }

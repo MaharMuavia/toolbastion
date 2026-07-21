@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import { z } from "zod";
 
-export const TOOLBASTION_VERSION = "0.1.3";
+export const TOOLBASTION_VERSION = "0.1.4";
 
 export const runtimeModeSchema = z.enum(["shadow", "interactive", "enforce"]);
 export type RuntimeMode = z.infer<typeof runtimeModeSchema>;
@@ -31,6 +31,23 @@ export const capabilityContractSchema = z.object({
   destructive: z.boolean()
 }).strict();
 export type CapabilityContract = z.infer<typeof capabilityContractSchema>;
+
+const sha256HexSchema = z.string().regex(/^[a-f0-9]{64}$/);
+export const targetArtifactIdentitySchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("docker"),
+    reference: z.string().min(1),
+    digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    imageId: z.string().regex(/^sha256:[a-f0-9]{64}$/)
+  }).strict(),
+  z.object({
+    kind: z.literal("executable"),
+    executablePath: z.string().min(1),
+    executableHash: sha256HexSchema,
+    buildHash: sha256HexSchema
+  }).strict()
+]);
+export type TargetArtifactIdentity = z.infer<typeof targetArtifactIdentitySchema>;
 
 /**
  * The dashboard/runtime boundary is deliberately narrower than the audit
@@ -323,11 +340,19 @@ export type RemediationProposal = z.infer<typeof remediationProposalSchema>;
 const dockerImageReferenceSchema = z.string().trim()
   .regex(/^(?:sha256:[a-f0-9]{64}|[^\s@]+@sha256:[a-f0-9]{64})$/, "Docker isolation image must be pinned by immutable sha256 digest");
 
+const writableMountPathSchema = z.string().trim().min(1).refine((value) => {
+  if (path.isAbsolute(value)) return false;
+  const normalized = value.replaceAll("\\", "/");
+  if (normalized.split("/").includes("..")) return false;
+  return normalized !== "." && normalized !== "./" && !normalized.includes("*");
+}, "writable_paths must be narrow, relative directories below project_root");
+
 const targetIsolationSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("none") }).strict(),
   z.object({
     provider: z.literal("docker"),
     image: dockerImageReferenceSchema,
+    writable_paths: z.array(writableMountPathSchema).max(8).default([]),
     user: z.string().regex(/^[1-9][0-9]{0,9}:[1-9][0-9]{0,9}$/).default("1000:1000"),
     memory_mb: z.number().int().min(128).max(4_096).default(512),
     cpus: z.number().positive().max(4).default(1),
@@ -511,6 +536,14 @@ export const toolbastionConfigSchema = z.object({
   }
   if (config.network.target_egress === "isolated" && config.target.isolation.provider !== "docker") {
     context.addIssue({ code: "custom", path: ["network", "target_egress"], message: "isolated target egress requires Docker target isolation" });
+  }
+  const writeTools = Object.entries(config.capabilities.tools).filter(([, contract]) => contract.filesystem === "write");
+  if (writeTools.length > 0) {
+    if (config.target.isolation.provider !== "docker") {
+      context.addIssue({ code: "custom", path: ["target", "isolation"], message: "filesystem:write requires Docker writable containment in enforce mode" });
+    } else if (config.target.isolation.writable_paths.length === 0) {
+      context.addIssue({ code: "custom", path: ["target", "isolation", "writable_paths"], message: "filesystem:write requires at least one narrowly scoped writable path" });
+    }
   }
 });
 export type ToolBastionConfig = z.output<typeof toolbastionConfigSchema>;

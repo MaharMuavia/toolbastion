@@ -63,4 +63,21 @@ describe("persistent trust baseline", () => {
     const legacyUnsigned = { version: 1 as const, targetName: v2.targetName, toolbastionVersion: v2.toolbastionVersion, createdAt: v2.createdAt, tools: [legacyTool] };
     expect(() => verifyTrustBaseline({ ...legacyUnsigned, baselineHash: "a".repeat(64) })).toThrow(/v1 does not contain capability contracts/);
   });
+
+  it("binds the baseline to the target artifact and invalidates any artifact change", () => {
+    const artifact = { kind: "executable" as const, executablePath: "C:/target/node.exe", executableHash: "a".repeat(64), buildHash: "b".repeat(64) };
+    const changedArtifact = { ...artifact, buildHash: "c".repeat(64) };
+    const baseline = createTrustBaseline("demo", tools, capabilities, artifact);
+    expect(baseline.version).toBe(3);
+    expect(diffTrustBaseline(baseline, tools, capabilities, "demo", artifact).artifactChanged).toBe(false);
+    expect(diffTrustBaseline(baseline, tools, capabilities, "demo", changedArtifact).artifactChanged).toBe(true);
+  });
+
+  it("fails safely on a v2 baseline until an operator migrates it", () => {
+    const v3 = createTrustBaseline("demo", tools, capabilities);
+    const { artifactIdentity: _artifactIdentity, ...v2WithoutArtifact } = v3;
+    void _artifactIdentity;
+    const v2 = { ...v2WithoutArtifact, version: 2 as const };
+    expect(() => verifyTrustBaseline(v2)).toThrow(/v2 is missing target artifact identity/);
+  });
 });

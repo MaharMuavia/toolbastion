@@ -6,7 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { stringify } from "yaml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ToolBastionTargetClient } from "../../packages/core/src/index.js";
+import { resolveTargetArtifactIdentity, ToolBastionTargetClient } from "../../packages/core/src/index.js";
 import { createTrustBaseline, writeTrustBaseline } from "../../packages/policy/src/index.js";
 import { bastionReceiptSchema, toolbastionConfigSchema } from "../../packages/shared/src/index.js";
 
@@ -46,7 +46,7 @@ beforeAll(async () => {
   await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, {
     ...capabilities,
     innocent_status: { ...capabilities.innocent_status, network: "none" }
-  }));
+  }, await resolveTargetArtifactIdentity(target, projectRoot)));
   const config = toolbastionConfigSchema.parse({
     version: 1,
     mode: "enforce",

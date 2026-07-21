@@ -1,7 +1,7 @@
 # ToolBastion
 
 <p align="center">
-  <strong>A zero-trust security gateway for MCP tool calls.</strong><br />
+  <strong>A security gateway and evidence layer for mediated MCP calls, with optional target-process containment.</strong><br />
   Inspect tool identity, arguments, execution decisions, and returned content before risk reaches your coding agent.
 </p>
 
@@ -137,6 +137,7 @@ Interactive mode returns an explicit `ASK_USER` result for ambiguous calls and n
 - Tool-list change notifications trigger baseline revalidation and exact-call cache invalidation.
 - Deterministic detectors use both field semantics and hostile content signatures, covering traversal/symlink escape, secret paths, shell metacharacters, destructive commands, SSRF/private endpoints, suspicious protocols, and misleading generic argument fields.
 - Target subprocesses inherit only the MCP SDK safe baseline plus explicitly named `env_allowlist` entries, have a bounded MCP request deadline, and have stderr drained without persistence.
+- `filesystem: none` blocks path and filesystem operation requests; `filesystem: read` blocks writes, deletes, renames, and destructive operations. `filesystem: write` is accepted only with Docker containment and existing, relative `target.isolation.writable_paths` mounts.
 - In enforce mode, every tool needs a reviewed capability contract. Declared network-denied, command, subprocess, or destructive capabilities require ToolBastion to launch the target in a pinned Docker image with no network namespace. `network: allowlist` fails closed until a real authenticated egress proxy is implemented; no topology setting grants that capability.
 - Hard denies cannot be overridden by GPT-5.6.
 - Enforce mode requires output inspection, credential redaction, prompt-injection quarantine, and untrusted-URL quarantine; payload depth, nodes, and bytes are bounded.
@@ -189,7 +190,7 @@ Set `TOOLBASTION_REMEDIATION_HMAC_KEY` to a unique secret of at least 32 bytes b
 
 The proxy speaks MCP JSON-RPC on stdout. Human diagnostics and lifecycle events use stderr only.
 
-Trust baselines created by current versions are v2 and include the reviewed `capabilities.tools` contract for every target tool. An existing v1 baseline safely fails closed until the operator reviews the current contracts and runs:
+Trust baselines created by current versions are v3 and include the reviewed `capabilities.tools` contract plus the resolved target artifact identity. Existing v1/v2 baselines safely fail closed until the operator reviews the current contracts and target artifact and runs:
 
 ```powershell
 node .\apps\cli\dist\index.js trust migrate --yes --config .\toolbastion.config.yaml
@@ -209,7 +210,7 @@ The dashboard binds only to localhost by default. A non-local bind needs the exp
 
 ## Isolated target setup
 
-For a target that must execute potentially network-capable MCP tools, use the Docker isolation profile. It fails closed before target startup unless Docker is reachable and the configured immutable image is already available locally. The container is started with `--network=none`, a read-only root filesystem and project mount, all Linux capabilities dropped, `no-new-privileges`, a non-root UID, a bounded tmpfs, and PID/memory/CPU limits. It cannot make DNS or TCP connections, including to host loopback.
+For a target that must execute potentially network-capable MCP tools, use the Docker isolation profile. It fails closed before target startup unless Docker is reachable and the configured immutable image is already available locally. The container is started with `--network=none`, a read-only root filesystem and project mount, all Linux capabilities dropped, `no-new-privileges`, a non-root UID, a bounded tmpfs, and PID/memory/CPU limits. It cannot make DNS or TCP connections, including to host loopback. A write-capable target must additionally declare existing project-relative `writable_paths`; only those directories are mounted read-write and the project mount remains read-only.
 
 Build the supplied probe image (it contains only Node; the read-only project mount provides the compiled server and dependencies), then paste the resulting immutable image ID into the policy:
 
@@ -229,6 +230,7 @@ target:
   isolation:
     provider: docker
     image: sha256:replace-with-the-64-hex-image-id-from-docker-build
+    writable_paths: []
     user: "1000:1000"
 network:
   target_egress: isolated

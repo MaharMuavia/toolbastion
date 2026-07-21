@@ -1,4 +1,4 @@
-import { createPrivateKey, randomUUID } from "node:crypto";
+import { createHash, createPrivateKey, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -13,7 +13,7 @@ import { AuditLog, redactAuditPayload, signReceipt, writeReceiptFile } from "@to
 import { createJudgeProvider, unavailableJudgeVerdict, type JudgeProvider } from "@toolbastion/judge";
 import { inspectToolResult } from "@toolbastion/output-firewall";
 import { ExactCallCache, applyRuntimeMode, diffTrustBaseline, evaluateDeterministic, readTrustBaseline, type TrustDiff } from "@toolbastion/policy";
-import { bastionReceiptSchema, sanitizeRuntimeEvent, sha256, targetServerConfigSchema, TOOLBASTION_VERSION, type AuthorizationDecision, type DeterministicResult, type ExecutionState, type JudgeVerdict, type OutputDecision, type RequestDecision, type RuntimeEvent, type RuntimeEventType, type TargetServerConfig, type TargetServerConfigInput, type ToolBastionConfig } from "@toolbastion/shared";
+import { bastionReceiptSchema, canonicalJson, sanitizeRuntimeEvent, sha256, targetArtifactIdentitySchema, targetServerConfigSchema, TOOLBASTION_VERSION, type AuthorizationDecision, type DeterministicResult, type ExecutionState, type JudgeVerdict, type OutputDecision, type RequestDecision, type RuntimeEvent, type RuntimeEventType, type TargetArtifactIdentity, type TargetServerConfig, type TargetServerConfigInput, type ToolBastionConfig } from "@toolbastion/shared";
 
 export type LifecycleEvent = {
   eventId: string;
@@ -178,6 +178,12 @@ export function buildDockerTargetCommand(config: TargetServerConfig, projectRoot
   const environmentArgs = Object.keys(environment)
     .sort((left, right) => left.localeCompare(right))
     .flatMap((name) => ["--env", name]);
+  const writableMounts = isolation.writable_paths.flatMap((relativePath) => {
+    const normalized = relativePath.replaceAll("\\", "/").replace(/^\.\//, "");
+    const sourcePath = path.resolve(source, relativePath);
+    const destinationPath = path.posix.join(DOCKER_WORKSPACE, normalized);
+    return ["--mount", `type=bind,src=${sourcePath},dst=${destinationPath},rw`];
+  });
   return {
     command: "docker",
     args: [
@@ -189,6 +195,7 @@ export function buildDockerTargetCommand(config: TargetServerConfig, projectRoot
       "--tmpfs", `/tmp:rw,noexec,nosuid,nodev,size=${isolation.tmpfs_size_mb}m`,
       "--tmpfs", `${DOCKER_WORKSPACE}/node_modules:rw,noexec,nosuid,nodev,size=16m`,
       "--mount", `type=bind,src=${source},dst=${DOCKER_WORKSPACE},readonly`,
+      ...writableMounts,
       "--workdir", dockerWorkdir(source, config.cwd),
       ...environmentArgs,
       isolation.image,
@@ -198,7 +205,23 @@ export function buildDockerTargetCommand(config: TargetServerConfig, projectRoot
   };
 }
 
-async function assertDockerImageAvailable(image: string): Promise<void> {
+async function assertWritableMountsWithinProject(config: TargetServerConfig, projectRoot: string): Promise<void> {
+  if (config.isolation.provider !== "docker") return;
+  const root = await realpath(path.resolve(projectRoot));
+  const normalizeCase = (value: string) => process.platform === "win32" ? value.toLowerCase() : value;
+  for (const relativePath of config.isolation.writable_paths) {
+    const candidate = path.resolve(root, relativePath);
+    const canonical = await realpath(candidate).catch(() => { throw new Error(`Writable containment path does not exist: ${relativePath}`); });
+    const relative = path.relative(normalizeCase(root), normalizeCase(canonical));
+    if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new Error(`Writable containment path resolves outside project_root: ${relativePath}`);
+    }
+    const metadata = await stat(canonical);
+    if (!metadata.isDirectory()) throw new Error(`Writable containment path is not a directory: ${relativePath}`);
+  }
+}
+
+async function inspectDockerImage(image: string): Promise<{ repoDigests: string[]; imageId: string }> {
   const output = await new Promise<string>((resolve, reject) => {
     const child = spawn("docker", ["image", "inspect", "--format", "{{json .RepoDigests}}\n{{.Id}}", image], {
       shell: false,
@@ -236,7 +259,7 @@ async function assertDockerImageAvailable(image: string): Promise<void> {
   const [rawRepoDigests = "", imageId = ""] = output.trimEnd().split(/\r?\n/, 2);
   if (image.startsWith("sha256:")) {
     if (imageId !== image) throw new Error("Docker image ID does not match the configured immutable digest");
-    return;
+    return { repoDigests: [], imageId };
   }
   let repoDigests: unknown;
   try {
@@ -244,9 +267,79 @@ async function assertDockerImageAvailable(image: string): Promise<void> {
   } catch {
     throw new Error("Docker image inspection returned an invalid digest record");
   }
-  if (!Array.isArray(repoDigests) || !repoDigests.includes(image)) {
+  if (!Array.isArray(repoDigests) || !repoDigests.every((value): value is string => typeof value === "string")) {
+    throw new Error("Docker image inspection returned an invalid digest record");
+  }
+  if (!repoDigests.includes(image)) {
     throw new Error("Docker image is not available under the configured immutable digest");
   }
+  return { repoDigests, imageId };
+}
+
+async function assertDockerImageAvailable(image: string): Promise<void> {
+  await inspectDockerImage(image);
+}
+
+function sha256Bytes(value: Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function resolveExecutablePath(command: string): Promise<string> {
+  const candidates: string[] = [];
+  if (path.isAbsolute(command) || command.includes(path.sep) || command.includes("/")) candidates.push(path.resolve(command));
+  else {
+    if (command.toLowerCase() === "node") candidates.push(process.execPath);
+    for (const directory of (process.env.PATH ?? "").split(path.delimiter).filter((value) => value.length > 0)) {
+      candidates.push(path.join(directory, command));
+      if (process.platform === "win32") for (const extension of [".exe", ".cmd", ".bat"]) candidates.push(path.join(directory, `${command}${extension}`));
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      const metadata = await stat(candidate);
+      if (metadata.isFile()) return await realpath(candidate);
+    } catch { /* try the next PATH candidate */ }
+  }
+  throw new Error(`Target executable could not be resolved for artifact hashing: ${command}`);
+}
+
+async function resolveTargetInputFiles(config: TargetServerConfig, projectRoot: string): Promise<string[]> {
+  const files = new Set<string>();
+  for (const argument of config.args) {
+    if (argument.startsWith("-") || /^[a-z][a-z0-9+.-]*:\/\//i.test(argument)) continue;
+    const candidate = path.resolve(config.cwd === undefined ? projectRoot : path.resolve(projectRoot, config.cwd), argument);
+    try {
+      const metadata = await stat(candidate);
+      if (metadata.isFile()) files.add(await realpath(candidate));
+    } catch { /* non-path arguments are not artifact files */ }
+  }
+  return [...files].sort((left, right) => left.localeCompare(right));
+}
+
+export async function resolveTargetArtifactIdentity(configInput: TargetServerConfigInput | TargetServerConfig, projectRoot: string): Promise<TargetArtifactIdentity> {
+  const config = targetServerConfigSchema.parse("envAllowlist" in configInput
+    ? (() => {
+      const { envAllowlist, ...target } = configInput;
+      return { ...target, env_allowlist: envAllowlist };
+    })()
+    : configInput);
+  if (config.isolation.provider === "docker") {
+    const inspected = await inspectDockerImage(config.isolation.image);
+    const digest = config.isolation.image.startsWith("sha256:")
+      ? config.isolation.image
+      : config.isolation.image.slice(config.isolation.image.indexOf("@") + 1);
+    return targetArtifactIdentitySchema.parse({ kind: "docker", reference: config.isolation.image, digest, imageId: inspected.imageId });
+  }
+  const executablePath = await resolveExecutablePath(config.command);
+  const executableHash = sha256Bytes(await readFile(executablePath));
+  const inputFiles = await resolveTargetInputFiles(config, path.resolve(projectRoot));
+  const inputHashes = await Promise.all(inputFiles.map(async (filePath) => ({ path: filePath, hash: sha256Bytes(await readFile(filePath)) })));
+  return targetArtifactIdentitySchema.parse({
+    kind: "executable",
+    executablePath,
+    executableHash,
+    buildHash: sha256(canonicalJson(inputHashes))
+  });
 }
 
 export class ToolBastionTargetClient {
@@ -307,6 +400,7 @@ export class ToolBastionTargetClient {
   async preflight(): Promise<void> {
     if (this.#preflighted || this.#config.isolation.provider !== "docker") return;
     await assertDockerImageAvailable(this.#config.isolation.image);
+    await assertWritableMountsWithinProject(this.#config, this.#projectRoot);
     this.#preflighted = true;
   }
 
@@ -566,6 +660,7 @@ export class ToolBastionProxy {
   readonly #clock: Clock;
   readonly #recentEvents: string[] = [];
   readonly #receiptCallIds = new Set<string>();
+  readonly #receiptFinalizations = new Map<string, Promise<void>>();
   readonly #acceptedCalls = new Map<string, AcceptedCall>();
   #tools: Awaited<ReturnType<ToolBastionTargetClient["listTools"]>>["tools"] = [];
   #untrustedTools = new Set<string>();
@@ -620,15 +715,19 @@ export class ToolBastionProxy {
     const baselinePath = path.resolve(this.#config.project_root, ".toolbastion", "toolbastion.lock.json");
     let diff: TrustDiff;
     try {
-      diff = diffTrustBaseline(await readTrustBaseline(baselinePath), this.#tools, this.#config.capabilities.tools, this.#config.target.name);
+      const artifactIdentity = await resolveTargetArtifactIdentity(this.#config.target, this.#config.project_root);
+      diff = diffTrustBaseline(await readTrustBaseline(baselinePath), this.#tools, this.#config.capabilities.tools, this.#config.target.name, artifactIdentity);
     } catch (error) {
-      diff = { added: this.#tools.map((tool) => tool.name), removed: [], schemaChanged: [], descriptionChanged: [], capabilityChanged: [], poisoned: [], unchanged: [] };
+      diff = { added: this.#tools.map((tool) => tool.name), removed: [], schemaChanged: [], descriptionChanged: [], capabilityChanged: [], poisoned: [], unchanged: [], artifactChanged: true };
       this.#emitEvent("trust_verified", { approved: false, error: error instanceof Error ? error.message : "baseline unavailable", diff });
     }
     const oversizedMetadata = this.#tools
       .filter((tool) => findValueBoundsViolation({ description: tool.description ?? "", inputSchema: tool.inputSchema }, { maxBytes: this.#config.limits.max_tool_metadata_bytes, maxDepth: 32, maxNodes: 10_000 }) !== undefined)
       .map((tool) => tool.name);
-    this.#untrustedTools = new Set([...diff.added, ...diff.schemaChanged, ...diff.descriptionChanged, ...diff.capabilityChanged, ...diff.poisoned, ...oversizedMetadata]);
+    this.#untrustedTools = new Set([
+      ...(diff.artifactChanged ? this.#tools.map((tool) => tool.name) : []),
+      ...diff.added, ...diff.schemaChanged, ...diff.descriptionChanged, ...diff.capabilityChanged, ...diff.poisoned, ...oversizedMetadata
+    ]);
     this.#emitEvent("trust_verified", { approved: this.#untrustedTools.size === 0, diff, oversizedMetadata });
     this.#cache.clear();
     this.#inputValidators.clear();
@@ -857,35 +956,41 @@ export class ToolBastionProxy {
 
   async #writeFinalReceipt(input: { callId: string; toolName: string; argsHash?: string; schemaHash?: string; policyHash?: string; authorizationDecision: AuthorizationDecision; executionState: ExecutionState; outputDecision: OutputDecision; judge: SafeJudgeVerdict | undefined }): Promise<void> {
     if (this.#receiptCallIds.has(input.callId)) return;
-    if (!this.#config.receipts.enabled) {
+    const pending = this.#receiptFinalizations.get(input.callId);
+    if (pending !== undefined) return pending;
+    const operation = (async () => {
+      if (!this.#config.receipts.enabled) return;
+      const accepted = this.#acceptedCalls.get(input.callId);
+      if (!accepted) throw new Error("Receipt finalization was attempted for a call that was not accepted");
+      const unsigned = {
+        version: 1 as const,
+        sessionId: this.#audit.sessionId,
+        callId: input.callId,
+        toolName: input.toolName,
+        toolManifestHash: sha256(this.#tools.map((tool) => ({ name: tool.name, description: tool.description ?? "", inputSchema: tool.inputSchema }))),
+        schemaHash: input.schemaHash ?? sha256({}),
+        policyHash: input.policyHash ?? accepted.policyHash,
+        argsHash: input.argsHash ?? accepted.argsHash,
+        authorizationDecision: input.authorizationDecision,
+        executionState: input.executionState,
+        outputDecision: input.outputDecision,
+        ...(input.judge === undefined ? {} : { judge: { requestedModel: this.#config.judge.model, responseModel: input.judge.model, offlineReplay: input.judge.offlineReplay, subchecks: input.judge.subchecks, inputTokens: input.judge.inputTokens ?? 0, outputTokens: input.judge.outputTokens ?? 0, latencyMs: input.judge.latencyMs } }),
+        startedAt: accepted.startedAt,
+        completedAt: accepted.timing.complete()
+      };
+      const receipt = process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY
+        ? signReceipt(unsigned)
+        : bastionReceiptSchema.parse({ ...unsigned, signatureStatus: "unsigned" });
+      await writeReceiptFile(this.#config.project_root, this.#config.receipts.directory, receipt);
+    })();
+    this.#receiptFinalizations.set(input.callId, operation);
+    try {
+      await operation;
       this.#receiptCallIds.add(input.callId);
       this.#acceptedCalls.delete(input.callId);
-      return;
+    } finally {
+      if (this.#receiptFinalizations.get(input.callId) === operation) this.#receiptFinalizations.delete(input.callId);
     }
-    const accepted = this.#acceptedCalls.get(input.callId);
-    if (!accepted) throw new Error("Receipt finalization was attempted for a call that was not accepted");
-    this.#receiptCallIds.add(input.callId);
-    const unsigned = {
-      version: 1 as const,
-      sessionId: this.#audit.sessionId,
-      callId: input.callId,
-      toolName: input.toolName,
-      toolManifestHash: sha256(this.#tools.map((tool) => ({ name: tool.name, description: tool.description ?? "", inputSchema: tool.inputSchema }))),
-      schemaHash: input.schemaHash ?? sha256({}),
-      policyHash: input.policyHash ?? accepted.policyHash,
-      argsHash: input.argsHash ?? accepted.argsHash,
-      authorizationDecision: input.authorizationDecision,
-      executionState: input.executionState,
-      outputDecision: input.outputDecision,
-      ...(input.judge === undefined ? {} : { judge: { requestedModel: this.#config.judge.model, responseModel: input.judge.model, offlineReplay: input.judge.offlineReplay, subchecks: input.judge.subchecks, inputTokens: input.judge.inputTokens ?? 0, outputTokens: input.judge.outputTokens ?? 0, latencyMs: input.judge.latencyMs } }),
-      startedAt: accepted.startedAt,
-      completedAt: accepted.timing.complete()
-    };
-    const receipt = process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY
-      ? signReceipt(unsigned)
-      : bastionReceiptSchema.parse({ ...unsigned, signatureStatus: "unsigned" });
-    await writeReceiptFile(this.#config.project_root, this.#config.receipts.directory, receipt);
-    this.#acceptedCalls.delete(input.callId);
   }
 
   async #preDispatchAuditUnavailable(toolName: string, lifecycle: Record<string, unknown> = {}, accepted?: AcceptedCall) {

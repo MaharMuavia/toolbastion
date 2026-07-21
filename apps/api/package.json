@@ -1,18 +1,20 @@
 {
   "name": "@toolbastion/api",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "scripts": { "build": "tsup ./src/index.ts --format esm --dts --clean" },
+  "scripts": {
+    "build": "tsup ./src/index.ts --format esm --dts --clean"
+  },
   "dependencies": {
     "@fastify/cors": "11.3.0",
     "@fastify/static": "10.1.0",
-    "@toolbastion/audit": "0.1.3",
-    "@toolbastion/policy": "0.1.3",
-    "@toolbastion/reports": "0.1.3",
-    "@toolbastion/shared": "0.1.3",
+    "@toolbastion/audit": "0.1.4",
+    "@toolbastion/policy": "0.1.4",
+    "@toolbastion/reports": "0.1.4",
+    "@toolbastion/shared": "0.1.4",
     "fastify": "5.10.0",
     "yaml": "2.9.0",
     "zod": "4.4.3"

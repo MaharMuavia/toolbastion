@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { ToolBastionTargetClient } from "@toolbastion/core";
+import { resolveTargetArtifactIdentity, ToolBastionTargetClient } from "@toolbastion/core";
 import { createTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
 import type { CapabilityContract } from "@toolbastion/shared";
 
@@ -88,7 +88,7 @@ describe("audit persistence failure", () => {
     try {
       const tools = (await discovery.listTools()).tools;
       const capabilities = capabilitiesFor(tools, { echo: { ...noCapability } });
-      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities));
+      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities, await resolveTargetArtifactIdentity(target, projectRoot)));
       await writeFile(configPath, JSON.stringify({
         version: 1,
         mode: "enforce",
@@ -154,7 +154,7 @@ describe("audit persistence failure", () => {
     try {
       const tools = (await discovery.listTools()).tools;
       const capabilities = capabilitiesFor(tools, { read_project_file: { ...noCapability, filesystem: "read" } });
-      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities));
+      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities, await resolveTargetArtifactIdentity(target, projectRoot)));
       await writeFile(configPath, JSON.stringify({
         version: 1,
         mode: "enforce",

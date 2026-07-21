@@ -1,10 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.4 - 2026-07-21
 
-- Added trust-baseline v2 with reviewed per-tool filesystem, network, command, subprocess, and destructive capability contracts.
-- Enforce mode now fails closed for missing or changed contracts, unsupported allowlisted egress, and uncontained declared capabilities.
-- Added `toolbastion trust migrate --yes` for explicit v1 baseline rebuilds.
-- Corrected receipt timing to capture acceptance once and finalization once, with deterministic-clock coverage.
-- Removed raw command executable projection from judge envelopes and renamed the local context field from intent to category.
-- Added capability and adversarial validation coverage plus per-category evaluation output.
+- Added filesystem capability enforcement for denied reads, read-to-write escalation, destructive operations, and scoped Docker writable mounts.
+- Upgraded trust baselines to v3 with immutable Docker image or executable/build identity; v1 and v2 baselines fail closed until explicitly migrated.
+- Corrected receipt finalization so persistence failures do not lose retry state or leave partial files.
+- Added fast-check adversarial properties for path, URL, shell, Unicode, encoding, nesting, and output-injection bypasses.
+- Replaced unsupported absolute-security product language with the security-gateway and evidence-layer description.

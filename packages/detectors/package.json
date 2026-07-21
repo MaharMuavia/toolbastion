@@ -1,6 +1,6 @@
 {
   "name": "@toolbastion/detectors",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "exports": "./dist/index.js",
@@ -9,6 +9,6 @@
     "build": "tsup ./src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@toolbastion/shared": "0.1.3"
+    "@toolbastion/shared": "0.1.4"
   }
 }

@@ -41,6 +41,21 @@ describe("tamper-evident audit log", () => {
     await expect(writeReceiptFile(root, "linked-receipts", { ...receipt, callId: "other-call" })).rejects.toThrow(/resolves outside/);
   });
 
+  it("cleans up failed receipt writes so a retry can finalize and duplicates are rejected", async () => {
+    const root = path.join(os.tmpdir(), `toolbastion-receipt-failure-${crypto.randomUUID()}`);
+    files.push(path.join(root, "cleanup-marker"));
+    await mkdir(root, { recursive: true });
+    const receipt = bastionReceiptSchema.parse({ version: 1, sessionId: "session", callId: "retry-call", toolName: "read", toolManifestHash: sha256([]), schemaHash: sha256({}), policyHash: sha256({}), argsHash: sha256({}), authorizationDecision: "BLOCK_BEFORE_EXECUTION", executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED", startedAt: "2026-07-20T00:00:00.000Z", completedAt: "2026-07-20T00:00:01.000Z", signatureStatus: "unsigned" });
+    await expect(writeReceiptFile(root, ".toolbastion/receipts", receipt, { failAt: "write" })).rejects.toThrow("Injected receipt persistence failure");
+    await expect(readFile(path.join(root, ".toolbastion", "receipts", "retry-call.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const file = await writeReceiptFile(root, ".toolbastion/receipts", receipt);
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ callId: "retry-call" });
+    await expect(writeReceiptFile(root, ".toolbastion/receipts", receipt)).rejects.toMatchObject({ code: "EEXIST" });
+    const syncFailure = { ...receipt, callId: "sync-failure" };
+    await expect(writeReceiptFile(root, ".toolbastion/receipts", syncFailure, { failAt: "sync" })).rejects.toThrow("Injected receipt persistence failure");
+    await expect(readFile(path.join(root, ".toolbastion", "receipts", "sync-failure.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("signs and independently verifies complete Ed25519 call receipts", () => {
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");
     const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();

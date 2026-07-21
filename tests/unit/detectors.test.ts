@@ -63,6 +63,34 @@ describe("path detector", () => {
       await rm(base, { recursive: true, force: true });
     }
   });
+
+  it("blocks a write through a symlink below a writable directory", async () => {
+    const base = path.join(root, ".test-tmp", "symlink-write-detector");
+    const project = path.join(base, "project");
+    const outside = path.join(base, "outside");
+    const scoped = path.join(project, "src");
+    const link = path.join(scoped, "escape");
+    await mkdir(scoped, { recursive: true });
+    await mkdir(outside, { recursive: true });
+    try {
+      await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
+      const writeConfig = toolbastionConfigSchema.parse({
+        version: 1,
+        mode: "enforce",
+        project_root: project,
+        target: { name: "write-target", command: "node", isolation: { provider: "docker", image: `registry.example/write@sha256:${"c".repeat(64)}`, writable_paths: ["src"] } },
+        paths: { allow: ["./**"], deny: [] },
+        network: { default: "deny" },
+        tools: { default: "allow", rules: {} },
+        capabilities: { tools: { write_project_file: { filesystem: "write", network: "none", command_exec: false, subprocess: false, destructive: false } } }
+      });
+      const result = await evaluateDeterministic("write_project_file", { path: "src/escape/new.txt", operation: "write" }, writeConfig);
+      expect(result.resolution).toBe("HARD_DENY");
+      expect(result.reasonCodes).toContain("path_outside_project_root");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("network detector", () => {

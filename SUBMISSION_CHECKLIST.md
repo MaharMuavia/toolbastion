@@ -1,38 +1,28 @@
 # Submission checklist
 
-Status reflects direct command evidence recorded on 2026-07-21. `Verified` means the cited command completed successfully in this verification pass; `Not reverified` is deliberately not a passing claim.
+This checklist describes the `0.1.4` release candidate in the current working tree. Local gates below are evidence for this tree; no final release commit or GitHub tag has been created, so external publication claims remain pending.
 
 | Requirement | Status | Evidence | Remaining action |
 | --- | --- | --- | --- |
-| Working MCP security proxy | Verified | `npm.cmd run demo:offline` printed all nine controls as `PASS` and `VERDICT Enforcement proof passed`. | None. |
-| Deterministic policy engine | Verified | `npm.cmd run artifact:prepare` reported `160` total fixtures, `160` passed, `0` failed. | None. |
-| GPT-5.6 integration | Live verified | `node --env-file=.env.local .\scripts\judge-smoke.mjs --record` returned `ALLOW`, model `gpt-5.6`, and all three subchecks `safe`; proof validation returned `valid:true` at `2026-07-21T08:22:37.687Z`. | None. |
-| Codex integration | Human feedback pending | No feedback session ID was supplied in this pass. | Run `/feedback` in the primary task and record the returned ID. |
-| CLI | Verified | `node ./apps/cli/dist/index.js --version` returned `0.1.3`. | None. |
-| API and React dashboard | Verified | `npm.cmd run test:e2e` returned `4 passed`; released container returned health `200`, protected version `401` without a token, and `200` with a token. | None. |
-| Vulnerable demo and fixtures | Verified | `npm.cmd run demo:offline` exercised the synthetic canary, traversal, undeclared argument, loopback exfiltration, hostile output, and credential-like output controls. | None. |
-| Automated tests | Verified | Local `npm.cmd test`: `146 passed`, `1 skipped`; release workflow `29814169400` completed successfully for commit `e9b5fa8`. | None. |
-| Offline keyless demo | Verified | `npm.cmd run demo:offline` completed with `VERDICT Enforcement proof passed`. | None. |
-| Target-side network containment | Verified | `npm.cmd run test:docker-isolation` returned `1 passed (1)`; the same gate passed in release workflow `29814169400`. | None. |
-| Audit tamper evidence | Verified | `npm.cmd run demo:offline` reported `Sealed tamper-evident audit 66 linked events verified`. | None. |
-| Documentation and threat model | Not reverified | This pass did not independently review the prose for completeness. | No new publication failure found by the release gates. |
-| Codex/human decision record | Human feedback pending | No feedback session ID was supplied in this pass. | Run `/feedback` and add its returned ID. |
-| Screenshots | Credential-pattern scan clean | Full-history/docs/screenshots scan returned `documentation_and_screenshots_secret_pattern_matches=0`. | Include the final visual privacy review in the demo-video recording task. |
-| Permissive license | Not reverified | License contents were not independently reviewed in this pass. | None. |
-| Prebuilt judge artifact | Verified | After `docker rmi`, an empty Docker client config anonymously pulled `v0.1.3` with `Status: Downloaded newer image`; Compose was downloaded directly from the Release URL, started healthy, returned health `200`, unauthenticated `401`, and authenticated version `0.1.3`. | None. |
-| Hosted read-only dashboard | Verified | Pages workflow `29814132241` completed for `e9b5fa8`; direct public fetch returned `HTTP/1.1 200 OK` and `<title>ToolBastion | Secure MCP tooling</title>`. | None. |
-| Submission description | Not reverified | This pass did not independently review the submission prose. | None. |
-| Public video under 3 minutes | Human action pending | Demo script exists at `docs/demo-script.md`; no recorded video was supplied. | Record/upload the video, confirm its duration, and review it for accidental exposure. |
-| Repository visibility | Verified | `gh repo view` returned `"visibility":"PUBLIC"`, `"isPrivate":false`; non-interactive clone with credential helpers disabled succeeded at `e9b5fa8`. | None. |
-| GitHub Release | Verified | `gh api repos/MaharMuavia/toolbastion/releases/tags/v0.1.3` returned `HTTP/2.0 200 OK`, `asset_count:6`; tag dereferences to `e9b5fa89b023dc5aabb1c677dd5a01521cb782fc`; all five SHA256SUMS entries passed. | None. |
-| `/feedback` Codex Session ID | Not recorded | No session ID was supplied in this pass. | Human must run `/feedback` and copy the returned ID into `docs/feedback-session.md`. |
+| Filesystem capability contracts | Verified | Unit and integration coverage blocks hidden reads, read-to-write escalation, deletes/renames, symlink escapes, and out-of-scope writes. | None for the implemented scope. |
+| Target artifact trust binding | Verified | Baseline v3 stores Docker digest/image ID or executable/build hashes; artifact mutation and v2 fail-closed migration tests pass. | Migrate deployed v2 baselines with explicit operator review. |
+| Durable receipts | Verified | Failure-injection tests prove partial-file cleanup, retry success, and duplicate rejection; full suite passes. | None. |
+| Unsupported product claims | Verified | README, package metadata, dashboard, and submission copy use the approved gateway/evidence-layer description. | None. |
+| Clean install | Verified | `npm.cmd ci --no-fund --no-audit` exited `0`. | Repeat on the final release commit. |
+| Build | Verified | `npm.cmd run build` exited `0`. | Repeat on the final release commit. |
+| Lint and typecheck | Verified | `npm.cmd run lint` and `npm.cmd run typecheck` exited `0`. | Repeat on the final release commit. |
+| Unit and integration tests | Verified | `npm.cmd test -- --reporter=dot`: `27` files passed, `1` skipped; `188` tests passed, `1` skipped; exit `0`. | Repeat on the final release commit. |
+| Property/fuzz tests | Verified | `tests/unit/adversarial-fast-check.test.ts`: 6 property tests passed with `fast-check`; included in the full suite. | Repeat on the final release commit. |
+| Docker isolation | Verified | `npm.cmd run test:docker-isolation`: `1` file and `1` test passed; exit `0` with Docker daemon access. | Repeat on the final release commit and record image digest. |
+| Playwright E2E | Verified | `npm.cmd run test:e2e -- --reporter=line`: `4 passed`; exit `0`. | Repeat on the final release commit. |
+| Evaluation | Verified | `npm.cmd run evaluate`: `160` fixtures, `160` passed, `0` failed; exit `0`. | Repeat on the final release commit. |
+| Snapshot verification | Verified | `npm.cmd run verify:snapshot`: valid, `9` audit events, no errors; exit `0`. | Repeat on the final release commit. |
+| Dependency audit | Verified | `npm.cmd audit --audit-level=high`: `found 0 vulnerabilities`; exit `0`. | Repeat on the final release commit. |
+| Secret scan | Verified | Tracked-file credential-pattern scan found no matches; exit `0`. | Run again from the final release commit/history. |
+| `git diff --check` | Verified | Exit `0`; only Git line-ending normalization warnings were emitted. | Run after staging the final commit. |
+| Evaluation/snapshot hashes | Verified | Evaluation SHA-256 `8d13b9eb3aa73e2ab103281186455fb6feab8d0b715156587078c23daf6894db`; snapshot audit SHA-256 `2a644b52753ea0825bcc3d18cacb836123c4a42e1f6e62ae66fc5a7319c59443`. | Recompute after the final commit if artifacts change. |
+| GitHub Release `v0.1.4` | Pending | No final release commit/tag exists in this workspace. | Create the commit and tag, push them, then verify the release assets and image digest. |
+| YouTube video under 3 minutes | Human action pending | `docs/demo-script.md` exists; no video was supplied. | Record, review, and upload the video. |
+| Codex `/feedback` session ID | Human action pending | No session ID was supplied. | Run `/feedback` in the primary task and record the returned ID. |
 
-## Final secret/publication gate
-
-- [x] Full Git-history scan returned `full_history_secret_pattern_matches=0`; docs/screenshots scan returned `0`; downloaded release assets and extracted release source each returned `0`; GitHub Actions reported `total_count:0` repository secrets.
-- [x] Repository is public and a fresh non-interactive HTTPS clone with credential helpers disabled succeeded.
-- [x] Pages deployment for the release commit succeeded; direct unauthenticated fetch of `https://maharmuavia.github.io/toolbastion/` returned `200` with the ToolBastion title.
-- [x] After removing the local `v0.1.3` tag, an empty Docker client configuration pulled the public image anonymously with `Status: Downloaded newer image`; a Compose file downloaded directly from the v0.1.3 Release started healthy, returned health `200`, unauthenticated `401`, and authenticated version `0.1.3`.
-- [x] `gh release download v0.1.3` followed by `sha256sum -c SHA256SUMS` returned `OK` for every checksummed release asset.
-- [ ] Record the public video, confirm it is under three minutes, and review it for accidental secret exposure.
-- [ ] Record the exact `/feedback` session ID in `docs/feedback-session.md`.
+The project is not marked production-ready. External publication, final-commit lineage, release signing/provenance, video upload, and feedback ID still require human authority.

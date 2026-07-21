@@ -1,5 +1,9 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import { describe, expect, it } from "vitest";
-import { buildIsolatedTargetEnvironment, buildTargetEnvironment } from "../../packages/core/src/index.js";
+import path from "node:path";
+import { buildIsolatedTargetEnvironment, buildTargetEnvironment, resolveTargetArtifactIdentity } from "../../packages/core/src/index.js";
 
 describe("target environment isolation", () => {
   it("inherits only the SDK safe baseline plus explicitly allowlisted variables", () => {
@@ -26,5 +30,23 @@ describe("target environment isolation", () => {
     });
 
     expect(isolated).toEqual({ TOOLBASTION_ALLOWED: "allowed-value" });
+  });
+
+  it("changes the executable build identity when a target entry artifact changes", async () => {
+    const root = path.join(os.tmpdir(), `toolbastion-artifact-${randomUUID()}`);
+    await mkdir(root, { recursive: true });
+    const entry = path.join(root, "target.js");
+    try {
+      await writeFile(entry, "export const version = 1;\n", "utf8");
+      const target = { name: "artifact-target", command: process.execPath, args: [entry], cwd: root, envAllowlist: [] };
+      const first = await resolveTargetArtifactIdentity(target, root);
+      await writeFile(entry, "export const version = 2;\n", "utf8");
+      const second = await resolveTargetArtifactIdentity(target, root);
+      if (first.kind !== "executable" || second.kind !== "executable") throw new Error("Expected executable artifact identities");
+      expect(first.executableHash).toBe(second.executableHash);
+      expect(first.buildHash).not.toBe(second.buildHash);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
