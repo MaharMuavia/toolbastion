@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-07-20T13:41:40.415Z",
+  "capturedAt": "2026-07-21T07:30:43.643Z",
   "provider": {
     "name": "openai-responses",
     "model": "gpt-5.6",
@@ -13,26 +13,26 @@
     "baseRisk": "high"
   },
   "verdict": {
-    "decision": "ASK_USER",
-    "riskLevel": "high",
-    "latencyMs": 5593,
-    "inputTokens": 1122,
-    "outputTokens": 457,
+    "decision": "ALLOW",
+    "riskLevel": "low",
+    "latencyMs": 10094,
+    "inputTokens": 1686,
+    "outputTokens": 694,
     "checks": [
       {
         "checkName": "scope_safety",
-        "verdict": "suspicious",
-        "riskLevel": "medium"
+        "verdict": "safe",
+        "riskLevel": "low"
       },
       {
         "checkName": "exfiltration_risk",
-        "verdict": "unavailable",
-        "riskLevel": "none"
+        "verdict": "safe",
+        "riskLevel": "low"
       },
       {
         "checkName": "tool_integrity",
-        "verdict": "unavailable",
-        "riskLevel": "high"
+        "verdict": "safe",
+        "riskLevel": "low"
       }
     ]
   }
