@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -11,12 +11,12 @@ import { Command } from "commander";
 import { parse } from "yaml";
 import { z, ZodError } from "zod";
 import { startApi } from "@toolbastion/api";
-import { readAuditEvents, redactAuditPayload, resolveAuditReadFile, verifyAuditFile, verifyReceipt } from "@toolbastion/audit";
+import { readAuditEvents, resolveAuditReadFile, verifyAuditFile, verifyReceipt } from "@toolbastion/audit";
 import { findValueBoundsViolation, ToolBastionProxy, ToolBastionTargetClient } from "@toolbastion/core";
 import { createTrustBaseline, diffTrustBaseline, readTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
 import { applyProposal, readProposal, rejectProposal, runCodexRemediation, saveProposal, verifyRemediation, type RemediationRequest } from "@toolbastion/remediation";
 import { generateSessionReport, renderMarkdownReport } from "@toolbastion/reports";
-import { formatZodIssues, sha256, TOOLBASTION_VERSION, toolbastionConfigSchema, type ToolBastionConfig } from "@toolbastion/shared";
+import { bastionReceiptSchema, formatZodIssues, runtimeEventSchema, sha256, TOOLBASTION_VERSION, toolbastionConfigSchema, type RuntimeEvent, type ToolBastionConfig } from "@toolbastion/shared";
 import { runProfessionalDemo } from "./demo.js";
 
 const VERSION = TOOLBASTION_VERSION;
@@ -43,6 +43,40 @@ function projectDirectory(projectRoot: string, configuredPath: string, label: st
   const relative = path.relative(normalizeCase(root), normalizeCase(candidate));
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`${label} must stay inside project_root`);
   return candidate;
+}
+
+async function removeIfPresent(filePath: string): Promise<void> {
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? String(error.code) : "unknown";
+    if (code !== "ENOENT") throw error;
+  }
+}
+
+async function rotateRuntimeEventLog(filePath: string, incomingBytes: number, maxBytes: number, retainFiles: number): Promise<boolean> {
+  let existingBytes = 0;
+  try {
+    existingBytes = (await stat(filePath)).size;
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? String(error.code) : "unknown";
+    if (code !== "ENOENT") throw error;
+  }
+  if (existingBytes + incomingBytes <= maxBytes) return false;
+  await removeIfPresent(`${filePath}.${retainFiles}`);
+  for (let index = retainFiles - 1; index >= 1; index -= 1) {
+    const source = `${filePath}.${index}`;
+    const destination = `${filePath}.${index + 1}`;
+    try {
+      await rename(source, destination);
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "unknown";
+      if (code !== "ENOENT") throw error;
+    }
+  }
+  await rename(filePath, `${filePath}.1`);
+  await writeFile(filePath, "", { encoding: "utf8", mode: 0o600 });
+  return true;
 }
 
 async function discover(configPath: string) {
@@ -134,10 +168,35 @@ audit.command("verify <session-id>")
   });
 
 const receipt = program.command("receipt").description("verify signed per-call receipts");
+receipt.command("inspect <file>")
+  .description("validate and print a receipt without trusting its signature")
+  .action(async (file: string) => {
+    const receiptValue = bastionReceiptSchema.parse(JSON.parse(await readFile(file, "utf8")));
+    process.stdout.write(`${JSON.stringify(receiptValue, null, 2)}\n`);
+  });
+receipt.command("list")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
+  .action(async ({ config: configPath }: { config: string }) => {
+    const config = await loadConfig(configPath);
+    const directory = projectDirectory(config.project_root, config.receipts.directory, "receipts.directory");
+    const { readdir } = await import("node:fs/promises");
+    const files = await readdir(directory).catch(() => [] as string[]);
+    process.stdout.write(`${JSON.stringify(files.filter((file) => /^[A-Za-z0-9-]+\.json$/.test(file)).sort(), null, 2)}\n`);
+  });
+receipt.command("show <call-id>")
+  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
+  .action(async (callId: string, { config: configPath }: { config: string }) => {
+    if (!/^[A-Za-z0-9-]+$/.test(callId)) throw new Error("receipt call id contains invalid characters");
+    const config = await loadConfig(configPath);
+    const directory = projectDirectory(config.project_root, config.receipts.directory, "receipts.directory");
+    const receiptValue = bastionReceiptSchema.parse(JSON.parse(await readFile(path.join(directory, `${callId}.json`), "utf8")));
+    process.stdout.write(`${JSON.stringify(receiptValue, null, 2)}\n`);
+  });
 receipt.command("verify <file>")
   .description("verify receipt schema, Ed25519 signature, hashes, and lifecycle consistency")
-  .action(async (file: string) => {
-    const verification = verifyReceipt(JSON.parse(await readFile(file, "utf8")));
+  .option("--trusted-key <file>", "operator Ed25519 public key PEM required to anchor verification")
+  .action(async (file: string, { trustedKey }: { trustedKey?: string }) => {
+    const verification = verifyReceipt(JSON.parse(await readFile(file, "utf8")), trustedKey === undefined ? undefined : await readFile(trustedKey, "utf8"));
     process.stdout.write(`${JSON.stringify({ file: path.resolve(file), ...verification }, null, 2)}\n`);
     if (!verification.valid) process.exitCode = 2;
   });
@@ -303,7 +362,7 @@ program.command("doctor")
   });
 
 program.command("dashboard")
-  .description("start the localhost dashboard with live-event support and verified-fixture fallback")
+  .description("start the localhost dashboard with explicit live-evidence source state")
   .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
   .option("-p, --port <number>", "localhost port", "4782")
   .option("--event-log <path>", "runtime event log produced by toolbastion run")
@@ -330,18 +389,66 @@ program.command("run")
     const config = await loadConfig(configPath);
     const eventLogPath = path.resolve(eventLog ?? path.join(config.project_root, ".toolbastion", "runtime-events.jsonl"));
     await mkdir(path.dirname(eventLogPath), { recursive: true });
+    for (let index = 1; index <= config.runtime_events.retain_files; index += 1) await removeIfPresent(`${eventLogPath}.${index}`);
     await writeFile(eventLogPath, "", { encoding: "utf8", mode: 0o600 });
     let eventWrites = Promise.resolve();
-    const writeRuntimeEvent = (event: unknown, emitDiagnostic = true) => {
-      const redacted = redactAuditPayload(event);
-      if (emitDiagnostic) writeDiagnostic(JSON.stringify(redacted));
+    let runtimeSessionId: string | undefined;
+    let runtimeSessionStartedAt: string | undefined;
+    const writeRuntimeEvent = (event: RuntimeEvent, emitDiagnostic = true) => {
+      const validated = runtimeEventSchema.parse(event);
+      runtimeSessionId = validated.sessionId;
+      if (validated.eventType === "session_started") runtimeSessionStartedAt = validated.timestamp;
+      if (emitDiagnostic) writeDiagnostic(JSON.stringify(validated));
       eventWrites = eventWrites
-        .then(() => appendFile(eventLogPath, `${JSON.stringify(redacted)}\n`, { encoding: "utf8", mode: 0o600 }))
+        .then(async () => {
+          const serialized = `${JSON.stringify(validated)}\n`;
+          const rollover = runtimeEventSchema.parse({
+            schemaVersion: 1,
+            eventId: randomUUID(),
+            sessionId: validated.sessionId,
+            sessionStartedAt: runtimeSessionStartedAt ?? validated.timestamp,
+            timestamp: new Date().toISOString(),
+            eventType: "runtime_log_rotated",
+            decisionSource: "deterministic",
+            riskLevel: "none",
+            inputTokens: 0,
+            outputTokens: 0,
+            judgeLatencyMs: 0,
+            cacheHit: false,
+            reasonCodes: ["runtime_log_rotated"],
+            evidenceState: "AVAILABLE"
+          });
+          const rolloverSerialized = `${JSON.stringify(rollover)}\n`;
+          const rotated = await rotateRuntimeEventLog(
+            eventLogPath,
+            Buffer.byteLength(serialized, "utf8") + Buffer.byteLength(rolloverSerialized, "utf8"),
+            config.runtime_events.max_bytes,
+            config.runtime_events.retain_files
+          );
+          await appendFile(eventLogPath, rotated ? `${rolloverSerialized}${serialized}` : serialized, { encoding: "utf8", mode: 0o600 });
+        })
         .catch((error: unknown) => { writeDiagnostic(`WARN Dashboard lifecycle log unavailable: ${error instanceof Error ? error.message : "write failed"}`); });
     };
     const proxy = new ToolBastionProxy(config, writeRuntimeEvent);
     let closing = false;
-    const heartbeat = setInterval(() => writeRuntimeEvent({ eventId: randomUUID(), timestamp: new Date().toISOString(), eventType: "heartbeat", payload: {} }, false), 5_000);
+    const heartbeat = setInterval(() => {
+      if (!runtimeSessionId) return;
+      writeRuntimeEvent(runtimeEventSchema.parse({
+        schemaVersion: 1,
+        eventId: randomUUID(),
+        sessionId: runtimeSessionId,
+        timestamp: new Date().toISOString(),
+        eventType: "heartbeat",
+        decisionSource: "system_failure",
+        riskLevel: "none",
+        inputTokens: 0,
+        outputTokens: 0,
+        judgeLatencyMs: 0,
+        cacheHit: false,
+        reasonCodes: [],
+        evidenceState: "AVAILABLE"
+      }), false);
+    }, 5_000);
     heartbeat.unref();
     const shutdown = async () => {
       if (closing) return;

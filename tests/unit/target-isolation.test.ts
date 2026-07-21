@@ -1,11 +1,23 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDockerTargetCommand } from "../../packages/core/src/index.js";
+import { buildDockerTargetCommand, ToolBastionProxy } from "../../packages/core/src/index.js";
 import { targetServerConfigSchema, toolbastionConfigSchema } from "../../packages/shared/src/index.js";
 
 const image = `registry.example/toolbastion-target@sha256:${"a".repeat(64)}`;
 
 describe("Docker target isolation", () => {
+  it("fails before accepting calls when receipt signing is required without a key", async () => {
+    const prior = process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY;
+    delete process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY;
+    try {
+      const config = toolbastionConfigSchema.parse({ version: 1, mode: "enforce", project_root: path.resolve("."), target: { name: "target", command: "node" }, receipts: { signing_required: true } });
+      await expect(new ToolBastionProxy(config).runStdio()).rejects.toThrow("Receipt signing is required");
+    } finally {
+      if (prior === undefined) delete process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY;
+      else process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY = prior;
+    }
+  });
+
   it("builds a pinned, networkless, read-only target launch with bounded resources", () => {
     const projectRoot = path.resolve(".");
     const target = targetServerConfigSchema.parse({
@@ -47,6 +59,13 @@ describe("Docker target isolation", () => {
   });
 
   it("rejects mutable images, host-absolute execution paths, and unisolated egress exceptions", () => {
+    expect(() => toolbastionConfigSchema.parse({
+      version: 1,
+      mode: "enforce",
+      target: { name: "target", command: "node" },
+      limits: { max_inflight_calls: 2 }
+    })).toThrow(/one in-flight call/);
+
     expect(() => toolbastionConfigSchema.parse({
       version: 1,
       mode: "enforce",

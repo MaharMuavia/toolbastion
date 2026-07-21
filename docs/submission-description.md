@@ -6,7 +6,7 @@ Developer Tools
 
 ## One-line description
 
-ToolBastion is a local-first security gateway that inspects MCP tools, calls and outputs before coding agents can execute unsafe actions.
+ToolBastion is a local execution firewall and evidence layer for one stdio MCP server used by coding agents.
 
 ## Full description
 

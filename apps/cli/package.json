@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "toolbastion": "./dist/index.js",
-    "warden": "./dist/index.js"
+    "toolbastion": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup ./src/index.ts --format esm --dts --clean",

@@ -17,7 +17,7 @@ This is a sanitized runtime-integration record for the OpenAI Build Week submiss
 
 The executable record is [live-judge-proof.json](../reports/live-judge-proof.json). It stores only the timestamp, provider/model, storage setting, test-case identity, decision, risk, token counts, latency, and structured outcome enums. It does not store API keys, raw prompts, raw argument values, policy text, or model rationale.
 
-Two subchecks returned the structured `unavailable` verdict because ToolBastion intentionally withholds raw command content and detailed egress policy from the external judge. That is an epistemic result from a successful model response, not an API outage: the record identifies `gpt-5.6` and has non-zero token usage. In interactive mode, the deterministic aggregator converts that uncertainty to `ASK_USER`.
+The recorded proof predates the expanded privacy-safe envelope and includes structured `unavailable` outcomes. It remains historical evidence rather than a current acceptance artifact. Current live requests additionally provide policy projection, structural argument profile, schema field names/types, required-field presence, path/destination/command classifications, metadata integrity, deterministic uncertainty codes, egress mode, base risk, runtime mode, and context availability. They still never include raw commands, paths, URLs with query values, arguments, policy text, context text, credentials, recent events, or model-authored patches. The recorder now refuses to replace the proof unless all three subchecks are grounded and non-`unavailable`.
 
 ## Reproduce
 

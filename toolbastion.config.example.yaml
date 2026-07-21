@@ -55,3 +55,11 @@ remediation:
   enabled: false
   auto_apply: false
   run_regression_suite: true
+receipts:
+  enabled: true
+  directory: ./.toolbastion/receipts
+  signing_required: false
+runtime_events:
+  # Redacted dashboard lifecycle segments only. Audit JSONL is the durable evidence source.
+  max_bytes: 8388608
+  retain_files: 2

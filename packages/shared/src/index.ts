@@ -13,10 +13,133 @@ export const authorizationDecisionSchema = z.enum(["ALLOW", "ASK_USER", "BLOCK_B
 export type AuthorizationDecision = z.infer<typeof authorizationDecisionSchema>;
 export const executionStateSchema = z.enum(["NOT_DISPATCHED", "DISPATCHED", "COMPLETED", "FAILED", "TIMED_OUT", "UNKNOWN"]);
 export type ExecutionState = z.infer<typeof executionStateSchema>;
-export const outputDecisionSchema = z.enum(["NOT_INSPECTED", "PASS", "REDACT", "QUARANTINE"]);
+export const outputDecisionSchema = z.enum(["NOT_INSPECTED", "NOT_RELEASED", "PASS", "REDACT", "QUARANTINE"]);
 export type OutputDecision = z.infer<typeof outputDecisionSchema>;
 export const riskLevelSchema = z.enum(["none", "low", "medium", "high", "critical"]);
 export type RiskLevel = z.infer<typeof riskLevelSchema>;
+
+/**
+ * The dashboard/runtime boundary is deliberately narrower than the audit
+ * boundary.  It contains only displayable lifecycle metadata: never tool
+ * arguments, policy text, target output, model reasoning, or credentials.
+ */
+export const runtimeEventTypeSchema = z.enum([
+  "session_started", "target_connecting", "target_connected", "tools_listed", "tools_changed", "trust_verified",
+  "policy_evaluated", "tool_call_received", "authorization_completed", "tool_dispatch_started", "tool_dispatch_completed",
+  "tool_dispatch_failed", "tool_dispatch_timed_out", "target_termination_started", "target_terminated", "target_restart_started",
+  "target_restarted", "output_inspected", "call_completed", "call_blocked", "audit_failed", "target_closed", "runtime_log_rotated", "heartbeat"
+]);
+export type RuntimeEventType = z.infer<typeof runtimeEventTypeSchema>;
+
+export const runtimeDecisionSourceSchema = z.enum(["deterministic", "semantic_judge", "cache", "system_failure"]);
+export type RuntimeDecisionSource = z.infer<typeof runtimeDecisionSourceSchema>;
+export const evidenceStateSchema = z.enum(["AVAILABLE", "UNAVAILABLE", "NOT_REQUIRED"]);
+export type EvidenceState = z.infer<typeof evidenceStateSchema>;
+
+const runtimeReasonCodeSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_:-]{0,119}$/);
+
+export const runtimeEventSchema = z.object({
+  schemaVersion: z.literal(1),
+  eventId: z.string().min(1).max(128),
+  sessionId: z.string().min(1).max(128),
+  sessionStartedAt: z.string().datetime({ offset: true }).optional(),
+  callId: z.string().min(1).max(128).optional(),
+  timestamp: z.string().datetime({ offset: true }),
+  eventType: runtimeEventTypeSchema,
+  toolName: z.string().min(1).max(256).optional(),
+  authorizationDecision: authorizationDecisionSchema.optional(),
+  executionState: executionStateSchema.optional(),
+  outputDecision: outputDecisionSchema.optional(),
+  decisionSource: runtimeDecisionSourceSchema,
+  riskLevel: riskLevelSchema,
+  judgeRequestedModel: z.string().min(1).max(128).optional(),
+  judgeResponseModel: z.string().min(1).max(128).optional(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  judgeLatencyMs: z.number().nonnegative(),
+  cacheHit: z.boolean(),
+  reasonCodes: z.array(runtimeReasonCodeSchema).max(64),
+  evidenceState: evidenceStateSchema
+}).strict();
+export type RuntimeEvent = z.infer<typeof runtimeEventSchema>;
+
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function validString(value: unknown, maximum = 256): string | undefined {
+  return typeof value === "string" && value.length > 0 && value.length <= maximum ? value : undefined;
+}
+
+function safeToolName(value: unknown): string | undefined {
+  const name = validString(value);
+  return name !== undefined && /^[A-Za-z0-9_.-]+$/.test(name) ? name : undefined;
+}
+
+function validNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function safeReasonCode(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase().replaceAll(/[^a-z0-9_:-]+/g, "_").replaceAll(/^_+|_+$/g, "").slice(0, 120);
+  return runtimeReasonCodeSchema.safeParse(normalized).success ? normalized : undefined;
+}
+
+/** Constructs a schema-validated, allowlisted runtime event from local facts. */
+export function sanitizeRuntimeEvent(input: {
+  eventId: string;
+  sessionId: string;
+  timestamp: string;
+  eventType: RuntimeEventType;
+  payload?: Record<string, unknown>;
+  judgeRequestedModel?: string;
+}): RuntimeEvent {
+  const payload = input.payload ?? {};
+  const deterministic = record(payload.deterministic);
+  const judge = record(payload.judge);
+  const directRisk = riskLevelSchema.safeParse(payload.riskLevel);
+  const deterministicRisk = riskLevelSchema.safeParse(deterministic.riskLevel);
+  const judgeRisk = riskLevelSchema.safeParse(judge.riskLevel);
+  const authorizationDecision = authorizationDecisionSchema.safeParse(payload.authorizationDecision);
+  const executionState = executionStateSchema.safeParse(payload.executionState);
+  const outputDecision = outputDecisionSchema.safeParse(payload.outputDecision);
+  const evidenceState = evidenceStateSchema.safeParse(payload.evidenceState);
+  const cacheHit = payload.cacheHit === true;
+  const payloadCodes = Array.isArray(payload.reasonCodes) ? payload.reasonCodes : payload.reason === undefined ? [] : [payload.reason];
+  const reasonCodes = [...new Set(payloadCodes.map(safeReasonCode).filter((value): value is string => value !== undefined))];
+  const model = validString(judge.model, 128);
+  const source = runtimeDecisionSourceSchema.safeParse(payload.decisionSource);
+  const decisionSource: RuntimeDecisionSource = source.success
+    ? source.data
+    : cacheHit ? "cache"
+      : model !== undefined || judge.offlineReplay === true ? "semantic_judge"
+        : input.eventType === "audit_failed" ? "system_failure"
+          : "deterministic";
+  return runtimeEventSchema.parse({
+    schemaVersion: 1,
+    eventId: input.eventId,
+    sessionId: input.sessionId,
+    ...(typeof payload.sessionStartedAt === "string" && z.string().datetime({ offset: true }).safeParse(payload.sessionStartedAt).success ? { sessionStartedAt: payload.sessionStartedAt } : {}),
+    ...(validString(payload.callId, 128) === undefined ? {} : { callId: validString(payload.callId, 128) }),
+    timestamp: input.timestamp,
+    eventType: input.eventType,
+    ...(safeToolName(payload.toolName) === undefined ? {} : { toolName: safeToolName(payload.toolName) }),
+    ...(authorizationDecision.success ? { authorizationDecision: authorizationDecision.data } : {}),
+    ...(executionState.success ? { executionState: executionState.data } : {}),
+    ...(outputDecision.success ? { outputDecision: outputDecision.data } : {}),
+    decisionSource,
+    riskLevel: directRisk.success ? directRisk.data : deterministicRisk.success ? deterministicRisk.data : judgeRisk.success ? judgeRisk.data : "none",
+    ...(input.judgeRequestedModel === undefined ? {} : { judgeRequestedModel: input.judgeRequestedModel.slice(0, 128) }),
+    ...(model === undefined ? {} : { judgeResponseModel: model }),
+    inputTokens: validNumber(judge.inputTokens),
+    outputTokens: validNumber(judge.outputTokens),
+    judgeLatencyMs: validNumber(judge.latencyMs),
+    cacheHit,
+    reasonCodes,
+    evidenceState: evidenceState.success ? evidenceState.data : input.eventType === "audit_failed" ? "UNAVAILABLE" : "AVAILABLE"
+  });
+}
 
 export const detectionEvidenceSchema = z.object({
   detector: z.string().min(1),
@@ -105,13 +228,17 @@ export const bastionReceiptSchema = z.object({
   }).strict().optional(),
   startedAt: z.string().datetime({ offset: true }),
   completedAt: z.string().datetime({ offset: true }).optional(),
+  signatureStatus: z.enum(["signed", "unsigned"]),
   signature: z.object({
     algorithm: z.literal("ed25519"),
     keyId: z.string().regex(/^[a-f0-9]{64}$/),
     publicKey: z.string().min(1),
     value: z.string().min(1)
-  }).strict()
-}).strict();
+  }).strict().optional()
+}).strict().superRefine((receipt, context) => {
+  if (receipt.signatureStatus === "signed" && receipt.signature === undefined) context.addIssue({ code: "custom", path: ["signature"], message: "signed receipts require a signature" });
+  if (receipt.signatureStatus === "unsigned" && receipt.signature !== undefined) context.addIssue({ code: "custom", path: ["signature"], message: "unsigned receipts cannot contain a signature" });
+});
 export type BastionReceipt = z.infer<typeof bastionReceiptSchema>;
 
 const remediationReasoningSchema = z.string().trim().min(1).max(4_000);
@@ -272,8 +399,26 @@ const limitSchema = z.object({
   max_output_depth: z.number().int().min(1).max(128).default(32),
   max_output_nodes: z.number().int().positive().max(100_000).default(10_000),
   max_tool_metadata_bytes: z.number().int().positive().max(1_048_576).default(65_536),
-  max_inflight_calls: z.number().int().positive().max(128).default(4),
+  max_inflight_calls: z.number().int().positive().max(128).default(1),
   tool_timeout_ms: z.number().int().positive().max(120_000).default(30_000)
+}).strict().prefault({});
+
+const receiptSchema = z.object({
+  enabled: z.boolean().default(true),
+  directory: projectRelativeDirectorySchema.default("./.toolbastion/receipts"),
+  signing_required: z.boolean().optional(),
+  signingRequired: z.boolean().optional()
+}).strict().prefault({}).superRefine((value, context) => {
+  if (value.signing_required !== undefined && value.signingRequired !== undefined && value.signing_required !== value.signingRequired) {
+    context.addIssue({ code: "custom", path: ["signing_required"], message: "signing_required conflicts with normalized signingRequired" });
+  }
+}).transform(({ signing_required, signingRequired, ...value }) => ({ ...value, signingRequired: signing_required ?? signingRequired ?? false }));
+
+const runtimeEventsSchema = z.object({
+  // The active log plus retained segments is capped at 64 MiB.  Rotation markers
+  // preserve the session identity when a long-running local session crosses a segment boundary.
+  max_bytes: z.number().int().min(65_536).max(16 * 1024 * 1024).default(8 * 1024 * 1024),
+  retain_files: z.number().int().min(1).max(3).default(2)
 }).strict().prefault({});
 
 export const toolbastionConfigSchema = z.object({
@@ -303,6 +448,8 @@ export const toolbastionConfigSchema = z.object({
     directory: projectRelativeDirectorySchema.default("./.toolbastion/audit"),
     retain_raw_content: z.literal(false).default(false)
   }).strict().prefault({}),
+  runtime_events: runtimeEventsSchema,
+  receipts: receiptSchema,
   remediation: z.object({
     enabled: z.boolean().default(false),
     auto_apply: z.literal(false).default(false),
@@ -325,6 +472,9 @@ export const toolbastionConfigSchema = z.object({
     });
   }
   if (config.mode !== "enforce") return;
+  if (config.limits.max_inflight_calls > 1) {
+    context.addIssue({ code: "custom", path: ["limits", "max_inflight_calls"], message: "enforce mode currently supports one in-flight call per stdio target" });
+  }
   if (config.network.default !== "deny") {
     context.addIssue({ code: "custom", path: ["network", "default"], message: "enforce mode requires a deny-by-default network policy" });
   }

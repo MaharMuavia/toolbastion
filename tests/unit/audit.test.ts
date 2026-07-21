@@ -3,8 +3,8 @@ import { generateKeyPairSync } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuditLog, resolveAuditReadFile, signReceipt, verifyAndReadAuditFile, verifyAuditFile, verifyReceipt } from "@toolbastion/audit";
-import { sha256 } from "@toolbastion/shared";
+import { AuditLog, resolveAuditReadFile, signReceipt, verifyAndReadAuditFile, verifyAuditFile, verifyReceipt, writeReceiptFile } from "@toolbastion/audit";
+import { bastionReceiptSchema, sha256 } from "@toolbastion/shared";
 
 const files: string[] = [];
 afterEach(async () => { for (const file of files.splice(0)) await rm(path.dirname(file), { recursive: true, force: true }).catch(() => undefined); });
@@ -27,17 +27,39 @@ async function fixture() {
 }
 
 describe("tamper-evident audit log", () => {
+  it("writes receipts exclusively inside the canonical project root", async () => {
+    const root = path.join(os.tmpdir(), `toolbastion-receipt-root-${crypto.randomUUID()}`);
+    const receipt = bastionReceiptSchema.parse({ version: 1, sessionId: "session", callId: "call-id", toolName: "read", toolManifestHash: sha256([]), schemaHash: sha256({}), policyHash: sha256({}), argsHash: sha256({}), authorizationDecision: "ALLOW", executionState: "COMPLETED", outputDecision: "PASS", startedAt: "2026-07-20T00:00:00.000Z", completedAt: "2026-07-20T00:00:01.000Z", signatureStatus: "unsigned" });
+    files.push(path.join(root, "cleanup-marker"));
+    await mkdir(root, { recursive: true });
+    const file = await writeReceiptFile(root, ".toolbastion/receipts", receipt);
+    await expect(writeReceiptFile(root, ".toolbastion/receipts", receipt)).rejects.toThrow();
+    expect(await readFile(file, "utf8")).not.toContain("raw-argument-sentinel");
+    const outside = path.join(os.tmpdir(), `toolbastion-receipt-outside-${crypto.randomUUID()}`);
+    await mkdir(outside, { recursive: true });
+    await symlink(outside, path.join(root, "linked-receipts"), process.platform === "win32" ? "junction" : "dir");
+    await expect(writeReceiptFile(root, "linked-receipts", { ...receipt, callId: "other-call" })).rejects.toThrow(/resolves outside/);
+  });
+
   it("signs and independently verifies complete Ed25519 call receipts", () => {
-    const { privateKey } = generateKeyPairSync("ed25519");
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
     const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
     const receipt = signReceipt({
       version: 1, sessionId: "session", callId: "call", toolName: "read_file",
       toolManifestHash: sha256({ tools: [] }), schemaHash: sha256({}), policyHash: sha256({ mode: "enforce" }), argsHash: sha256({ path: "src/index.ts" }),
       authorizationDecision: "ALLOW", executionState: "COMPLETED", outputDecision: "PASS",
       startedAt: "2026-07-20T00:00:00.000Z", completedAt: "2026-07-20T00:00:01.000Z"
     }, privateKeyPem);
-    expect(verifyReceipt(receipt)).toEqual({ valid: true, errors: [] });
+    expect(verifyReceipt(receipt, publicKeyPem)).toEqual({ valid: true, errors: [] });
+    const wrongKey = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+    expect(verifyReceipt(receipt, wrongKey).errors).toContain("receipt key is not the configured trusted operator key");
     expect(verifyReceipt({ ...receipt, toolName: "write_file" }).valid).toBe(false);
+  });
+
+  it("rejects unsigned receipts as unverifiable", () => {
+    const receipt = bastionReceiptSchema.parse({ version: 1, sessionId: "session", callId: "unsigned-call", toolName: "read", toolManifestHash: sha256([]), schemaHash: sha256({}), policyHash: sha256({}), argsHash: sha256({}), authorizationDecision: "BLOCK_BEFORE_EXECUTION", executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED", startedAt: "2026-07-20T00:00:00.000Z", completedAt: "2026-07-20T00:00:01.000Z", signatureStatus: "unsigned" });
+    expect(verifyReceipt(receipt)).toEqual({ valid: false, errors: ["receipt is unsigned"] });
   });
 
   it("writes a valid hash chain without raw secrets", async () => {
@@ -107,6 +129,18 @@ describe("tamper-evident audit log", () => {
     expect(snapshot.verification.valid).toBe(true);
     expect(snapshot.content).toContain("audit_session_sealed");
     expect(snapshot.events).toHaveLength(3);
+  });
+
+  it("reports an unsealed session when audit sealing fails", async () => {
+    const directory = path.join(os.tmpdir(), `toolbastion-audit-seal-${crypto.randomUUID()}`);
+    const log = new AuditLog(directory, "seal-failure-session", {
+      retainRawContent: false,
+      failWriteForEvent: (eventType) => eventType === "audit_session_sealed"
+    });
+    files.push(log.filePath);
+    await log.append("decision", { decision: "ALLOW" });
+    await expect(log.close()).rejects.toThrow("Injected audit persistence failure");
+    expect((await verifyAuditFile(log.filePath)).valid).toBe(false);
   });
 
   it("only resolves audit reads within the canonical project root", async () => {

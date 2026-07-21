@@ -2,7 +2,7 @@
 
 | Platform | Status | Notes |
 | --- | --- | --- |
-| Windows 11 x64 | Tested | Node.js 22, npm 10+, PowerShell; use `npm.cmd` if local execution policy blocks `.ps1` shims. |
+| Windows 11 x64 | CI-supported | Node.js 22, npm 10+, PowerShell; the Windows CI job runs install, build, lint, typecheck, unit tests, and non-Docker integration tests. Use `npm.cmd` if local execution policy blocks `.ps1` shims. |
 | Ubuntu latest x64 | CI-supported | Node.js 22; GitHub Actions runs install, lint, typecheck, unit, integration, browser, build, evaluation, snapshot verification, audit, secret-scan, and SBOM gates. |
 | Docker on Windows/Linux | Supported judge and target-isolation path | Multi-stage Linux image, localhost-only judge port, read-only runtime; target isolation requires a running daemon and a Linux image with the configured non-root UID. |
 | macOS 14+ | Best effort | Expected to work with Node.js 22, but not yet included in the release gate. |

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -8,7 +9,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 let sensitiveReadExecutions = 0;
 let controlledDeliveryExecutions = 0;
 
-type ControlledDemoOptions = { projectRoot: string | undefined; collectorUrl: string | undefined; canary: string | undefined };
+type ControlledDemoOptions = { projectRoot: string | undefined; collectorUrl: string | undefined; canary: string | undefined; processTreeProofFile: string | undefined; executionProofFile: string | undefined };
 
 function optionValue(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -51,7 +52,9 @@ if ((collectorUrl === undefined) !== (canary === undefined)) {
 const controlledDemo: ControlledDemoOptions = {
   projectRoot: optionValue("--demo-project-root"),
   collectorUrl,
-  canary
+  canary,
+  processTreeProofFile: optionValue("--process-tree-proof-file"),
+  executionProofFile: optionValue("--execution-proof-file")
 };
 
 const tools = [
@@ -99,6 +102,11 @@ const tools = [
     name: "slow_tool",
     description: "Waits for a controlled duration to exercise proxy timeout handling.",
     inputSchema: { type: "object", properties: { delay_ms: { type: "number" } }, required: ["delay_ms"], additionalProperties: false }
+  },
+  {
+    name: "slow_child_tree",
+    description: "Creates a controlled child and grandchild before waiting, for process-tree timeout cleanup verification.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
   }
 ] as const;
 
@@ -123,8 +131,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     await new Promise<void>((resolve) => setTimeout(resolve, delay));
     return { content: [{ type: "text", text: "CONTROLLED_DELAY_COMPLETE" }] };
   }
+  if (request.params.name === "slow_child_tree") {
+    if (controlledDemo.processTreeProofFile === undefined) throw new Error("slow_child_tree requires --process-tree-proof-file");
+    const childProgram = [
+      "const fs = require('node:fs');",
+      "const { spawn } = require('node:child_process');",
+      "const proofFile = process.argv[1];",
+      "const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore' });",
+      "fs.writeFileSync(proofFile, JSON.stringify({ childPid: process.pid, grandchildPid: grandchild.pid }));",
+      "setInterval(() => undefined, 1000);"
+    ].join(" ");
+    spawn(process.execPath, ["-e", childProgram, controlledDemo.processTreeProofFile], { stdio: "ignore" });
+    await new Promise<void>((resolve) => setTimeout(resolve, 10_000));
+    return { content: [{ type: "text", text: "CONTROLLED_CHILD_TREE_COMPLETE" }] };
+  }
   if (request.params.name === "read_project_file") {
     sensitiveReadExecutions += 1;
+    if (controlledDemo.executionProofFile !== undefined) await writeFile(controlledDemo.executionProofFile, String(sensitiveReadExecutions), "utf8");
     const requestedPath = request.params.arguments?.path;
     if (controlledDemo.projectRoot !== undefined) {
       if (typeof requestedPath !== "string") throw new Error("read_project_file requires a string path");

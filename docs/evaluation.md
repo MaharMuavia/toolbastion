@@ -2,9 +2,9 @@
 
 ## Method
 
-`npm run evaluate` loads the Day 2 attack and benign corpora plus the Day 5 hardening corpus. It runs real deterministic detectors, output inspection, trust/policy assertions, and deterministic judge-failure aggregation without network access. It writes `reports/evaluation-summary.json`; `npm run snapshot` copies a stable summary into the read-only dashboard.
+`npm run evaluate` loads the 40 curated Day 2/Day 5 fixtures plus 120 deterministic, seed-generated adversarial and benign variants. It runs real deterministic detectors, output inspection, trust/policy assertions, and deterministic judge-failure aggregation without network access. It writes `reports/evaluation-summary.json`; `npm run snapshot` copies a stable summary into the read-only dashboard. Set `TOOLBASTION_EVALUATION_SEED` to reproduce or vary the generated sequence; the summary reports the seed.
 
-The 40 unique cases cover:
+The 160 cases cover:
 
 - path traversal, Windows/UNC paths, null bytes, environment expansion, and symlink escape;
 - secret-file access, command chaining/substitution, encoded PowerShell, download-to-shell, and destructive commands;
@@ -19,15 +19,15 @@ The 40 unique cases cover:
 
 | Metric | Result | Interpretation |
 | --- | ---: | --- |
-| Fixtures | 40/40 passed | Expected decisions matched this curated corpus. |
+| Fixtures | 160/160 passed | Expected decisions matched the curated and deterministic seeded corpus. |
 | True-positive rate | 100% | Every labeled attack case was detected in this corpus. |
 | False-positive rate | 0% | Every labeled benign case met its expected outcome; `ASK_USER` may be expected. |
-| Deterministic resolution | 90% | 36 of 40 cases required no semantic escalation. |
-| GPT escalation | 10% | Four structural failure/ambiguity or benign-review cases exercised judge aggregation. |
+| Deterministic resolution | 78.75% | 126 of 160 cases required no semantic escalation. |
+| GPT escalation | 21.25% | 34 structural failure, ambiguity, or benign-review cases exercised judge aggregation. |
 | Output redaction accuracy | 100% | Curated output expectations matched. |
 | Cache hit rate | 0% | Cases are intentionally unique, so cache performance is not measured. |
 
-The generated summary intentionally omits timing measurements: the corpus is a functional correctness check, not a benchmark, and deterministic snapshots must not imply a reproducible latency figure.
+The generated summary intentionally omits timing measurements: the corpus is a functional correctness check, not a benchmark, and deterministic snapshots must not imply a reproducible latency figure. Run `npm run benchmark` for local p50/p95/max deterministic-decision, output-inspection, audit-write, cache, throughput, and memory-growth measurements. It prints results only and does not alter committed snapshot artifacts.
 
 ## What the result does not prove
 
@@ -55,4 +55,4 @@ The product demo first runs a direct, deliberately vulnerable control that reads
 
 ## Live acceptance status
 
-The implementation uses the OpenAI Responses API with Zod structured outputs and three independent subchecks. A real smoke attempt reached OpenAI but returned account-inactive HTTP 429. The key remains outside the repository and live acceptance must be rerun after project billing is activated. This limitation is intentionally visible rather than represented by recorded output.
+The implementation uses the OpenAI Responses API with Zod structured outputs and three independent subchecks. A successful sanitized live proof is retained separately; it demonstrates provider connectivity, structured parsing, non-zero usage, and `store: false`, not model-quality accuracy. Mandatory CI remains credential-free and uses visibly labeled deterministic/offline fixtures.

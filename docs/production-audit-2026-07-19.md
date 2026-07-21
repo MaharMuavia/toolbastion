@@ -46,7 +46,7 @@ MCP client
 | --- | --- | ---: | --- | --- |
 | YAML policy | Runtime configuration | 1 example policy | Zod strict schema | Verified |
 | Tool baseline JSON | Approved metadata identity | Local generated artifact | Canonical hash and schema verification | Verified by code/tests |
-| Attack/benign/evaluation fixtures | Deterministic regression corpus | 40 evaluated fixtures | JSON parsing, policy/detector assertions | Verified offline |
+| Attack/benign/evaluation fixtures | Deterministic regression corpus | 40 evaluated fixtures at the time of this audit; superseded by the current 160-case corpus | JSON parsing, policy/detector assertions | Verified offline |
 | Recorded judge fixture | Offline semantic replay | 3 subchecks per tool fixture | Zod fixed-length subchecks | Verified offline |
 | JSONL audit | Redacted decision evidence | 9 snapshot events; 39 events in live test proof | Sealed SHA-256 chain, sequence/session checks | Verified |
 | Dashboard snapshot | Read-only public evidence | 12 scenarios, 9 audit events | Artifact regeneration and snapshot verification | Verified |
@@ -98,7 +98,7 @@ Critical lineage is: MCP arguments -> schema/bounds validation -> deterministic 
 | `npm.cmd run typecheck` | Passed | `tsc --noEmit` completed. |
 | `npm.cmd test` | Passed | 119 passed, 1 skipped; keyless attack-and-prevention proof sealed 39 audit events. |
 | `npm.cmd run test:e2e` | Passed | 2 Chromium dashboard flows passed. |
-| `npm.cmd run artifact:prepare` | Passed | 40/40 offline fixtures passed; regenerated snapshot verified 9 audit events. |
+| `npm.cmd run artifact:prepare` | Passed | 40/40 offline fixtures passed at the time; the current release gate regenerates and verifies the 160-case summary. |
 | `npm.cmd audit --audit-level=high` | Passed | 0 vulnerabilities reported. |
 | `npm.cmd run test:docker-isolation` | Passed | The no-network target started and could not reach the controlled host collector. |
 | `docker compose -f docker-compose.yml up -d` | Passed | Current image built; health returned `200`, unauthenticated API returned `401`, authenticated API returned `200`; resources were removed afterward. |

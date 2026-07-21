@@ -1,4 +1,4 @@
-import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApi, startApi } from "../../apps/api/src/index.js";
@@ -6,6 +6,25 @@ import { createTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
 
 const root = path.resolve(".");
 const app = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath: path.join(root, ".test-tmp", "missing-runtime-events.jsonl"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
+
+function runtimeEvent(eventId: string, eventType: string, overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    eventId,
+    sessionId: "live-session-1",
+    timestamp: new Date().toISOString(),
+    eventType,
+    decisionSource: "deterministic",
+    riskLevel: "none",
+    inputTokens: 0,
+    outputTokens: 0,
+    judgeLatencyMs: 0,
+    cacheHit: false,
+    reasonCodes: [],
+    evidenceState: "AVAILABLE",
+    ...overrides
+  };
+}
 
 beforeAll(async () => app.ready());
 afterAll(async () => app.close());
@@ -73,29 +92,37 @@ describe("dashboard API", () => {
     }
   });
 
-  it("switches to a redacted live lifecycle session when a runtime log is present", async () => {
+  it("labels healthy, stale, invalid, closed, and recorded runtime evidence explicitly", async () => {
     const directory = path.join(root, ".test-tmp", "api-live-events");
     const eventLogPath = path.join(directory, "runtime-events.jsonl");
     await mkdir(directory, { recursive: true });
-    const timestamp = new Date().toISOString();
     const lifecycle = [
-      { eventId: "live-1", timestamp, eventType: "session_started", payload: { sessionId: "live-session-1" } },
-      { eventId: "live-2", timestamp, eventType: "target_connected", payload: { targetName: "live-target" } },
-      { eventId: "live-3", timestamp, eventType: "call_blocked", payload: { toolName: "read_file", reason: "deterministic_block", riskLevel: "critical" } }
+      runtimeEvent("live-1", "session_started"),
+      runtimeEvent("live-2", "target_connected"),
+      runtimeEvent("live-3", "authorization_completed", { callId: "call-1", toolName: "read_file", authorizationDecision: "BLOCK_BEFORE_EXECUTION", executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED", riskLevel: "critical", reasonCodes: ["path_outside_project_root"] }),
+      runtimeEvent("live-4", "call_blocked", { callId: "call-1", toolName: "read_file", authorizationDecision: "BLOCK_BEFORE_EXECUTION", executionState: "NOT_DISPATCHED", outputDecision: "NOT_INSPECTED", riskLevel: "critical", reasonCodes: ["path_outside_project_root"] })
     ];
     await writeFile(eventLogPath, `${lifecycle.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
     const liveApp = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath });
     try {
       await liveApp.ready();
-      const sessions = (await liveApp.inject({ method: "GET", url: "/api/sessions" })).json<Array<{ sessionId: string; label: string }>>();
-      expect(sessions[0]).toMatchObject({ sessionId: "live-session-1", label: "LIVE LOCAL SESSION" });
+      const sessions = (await liveApp.inject({ method: "GET", url: "/api/sessions" })).json<Array<{ sessionId: string; label: string; sourceState: string }>>();
+      expect(sessions[0]).toMatchObject({ sessionId: "live-session-1", label: "LIVE LOCAL SESSION", sourceState: "LIVE_HEALTHY" });
       const detail = (await liveApp.inject({ method: "GET", url: "/api/sessions/live-session-1" })).json<{ targetName: string; metrics: { blocks: number } }>();
-      expect(detail.targetName).toBe("live-target");
+      expect(detail.targetName).toBe("benign-demo");
       expect(detail.metrics.blocks).toBe(1);
-      const closed = [...lifecycle, { eventId: "live-4", timestamp: new Date().toISOString(), eventType: "target_closed", payload: { targetName: "live-target" } }];
+      await utimes(eventLogPath, new Date(Date.now() - 20_000), new Date(Date.now() - 20_000));
+      expect((await liveApp.inject({ method: "GET", url: "/api/evidence/status" })).json()).toMatchObject({ sourceState: "LIVE_STALE", reasonCode: "runtime_log_stale" });
+      await writeFile(eventLogPath, "{invalid-json}\n", "utf8");
+      expect((await liveApp.inject({ method: "GET", url: "/api/evidence/status" })).json()).toMatchObject({ sourceState: "LIVE_INVALID", reasonCode: "runtime_log_malformed" });
+      const closed = [...lifecycle, runtimeEvent("live-5", "target_closed")];
       await writeFile(eventLogPath, `${closed.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
-      const fallback = (await liveApp.inject({ method: "GET", url: "/api/sessions" })).json<Array<{ label: string }>>();
-      expect(fallback[0]?.label).toBe("OFFLINE FIXTURE REPLAY");
+      expect((await liveApp.inject({ method: "GET", url: "/api/evidence/status" })).json()).toMatchObject({ sourceState: "LIVE_CLOSED", reasonCode: "runtime_session_closed" });
+      const recordedApp = await createApi({ rootDir: root });
+      try {
+        await recordedApp.ready();
+        expect((await recordedApp.inject({ method: "GET", url: "/api/evidence/status" })).json()).toMatchObject({ sourceState: "RECORDED_SNAPSHOT", reasonCode: "recorded_snapshot_selected" });
+      } finally { await recordedApp.close(); }
     } finally {
       await liveApp.close();
       await rm(directory, { recursive: true, force: true });
@@ -119,8 +146,7 @@ describe("dashboard API", () => {
       target: { name: "live-target", command: process.execPath, args: [], env_allowlist: [] },
       audit: { directory: "linked-audit" }
     }), "utf8");
-    const timestamp = new Date().toISOString();
-    await writeFile(eventLogPath, `${JSON.stringify({ eventId: "audit-live-1", timestamp, eventType: "session_started", payload: { sessionId: "live-session-1" } })}\n${JSON.stringify({ eventId: "audit-live-2", timestamp, eventType: "target_connected", payload: { targetName: "live-target" } })}\n`, "utf8");
+    await writeFile(eventLogPath, `${JSON.stringify(runtimeEvent("audit-live-1", "session_started"))}\n${JSON.stringify(runtimeEvent("audit-live-2", "target_connected"))}\n`, "utf8");
     const liveApp = await createApi({ rootDir: root, configPath, eventLogPath });
     try {
       await liveApp.ready();

@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -8,7 +8,7 @@ import { stringify } from "yaml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ToolBastionTargetClient } from "../../packages/core/src/index.js";
 import { createTrustBaseline, writeTrustBaseline } from "../../packages/policy/src/index.js";
-import { toolbastionConfigSchema } from "../../packages/shared/src/index.js";
+import { bastionReceiptSchema, toolbastionConfigSchema } from "../../packages/shared/src/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const projectRoot = path.join(root, ".test-tmp", "enforcement-project");
@@ -55,7 +55,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await transport?.close();
-  await rm(path.join(root, ".test-tmp"), { recursive: true, force: true });
+  await rm(projectRoot, { recursive: true, force: true });
 });
 
 async function executionCount(): Promise<number> {
@@ -142,14 +142,26 @@ describe("enforce mode", () => {
     expect(await executionCount()).toBe(before);
   });
 
-  it("reports a truthful timeout state and restarts the target after a deadline", async () => {
+  it("restarts only after confirmed timeout termination and otherwise stays fail-closed", async () => {
     const result = await client.callTool({ name: "slow_tool", arguments: { delay_ms: 500 } });
     expect(result.isError).toBe(true);
     const response = (result.content as Array<{ type: string; text: string }>)[0]?.text ?? "";
     expect(response).toMatch(/"executionState":"(?:TIMED_OUT|UNKNOWN)"/);
-    if (response.includes("TIMED_OUT")) {
-      const restarted = await client.callTool({ name: "read_project_file", arguments: { path: "src/safe.ts" } });
-      expect(restarted.isError).not.toBe(true);
-    }
+    const restarted = await client.callTool({ name: "read_project_file", arguments: { path: "src/safe.ts" } });
+    if (response.includes('"executionState":"TIMED_OUT"')) expect(restarted.isError).not.toBe(true);
+    else expect(restarted.isError).toBe(true);
   }, 10_000);
+
+  it("writes one final unsigned receipt per call without raw arguments or secrets", async () => {
+    const directory = path.join(projectRoot, ".toolbastion", "receipts");
+    const files = (await readdir(directory)).filter((file) => file.endsWith(".json"));
+    expect(files.length).toBeGreaterThan(0);
+    const content = await readFile(path.join(directory, files[0]!), "utf8");
+    const receipt = bastionReceiptSchema.parse(JSON.parse(content));
+    expect(receipt.signatureStatus).toBe("unsigned");
+    expect(receipt.completedAt).toBeDefined();
+    expect(receipt.executionState).not.toBe("DISPATCHED");
+    expect(content).not.toContain("src/safe.ts");
+    expect(content).not.toContain("TOOLBASTION_TEST_SECRET_NOT_REAL_123456");
+  });
 });

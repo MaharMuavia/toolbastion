@@ -1,5 +1,21 @@
 # Engineering decisions
 
+## 2026-07-21 — Live evidence is bounded and explicitly partial after rotation
+
+- Decision: Stream one sanitized runtime JSONL tailer to all dashboard clients, rotate operational lifecycle segments under a configured byte/retention bound, and mark views crossing that boundary `LIVE PARTIAL`.
+- Alternatives: reread the complete file for each SSE client; retain unlimited operational telemetry; silently show a truncated lifecycle as complete.
+- Why: dashboard observation must stay bounded and must not become a denial-of-service multiplier or misrepresent retained evidence.
+- Trade-off: complete session evidence belongs to the verified audit chain, while the live dashboard retains only configured operational history.
+- Source: production-readiness hardening.
+
+## 2026-07-21 — Audit persistence failure never releases a target result
+
+- Decision: In enforce mode, audit write failure permanently closes the session to future dispatch. A failure after execution returns the actual execution state with `NOT_RELEASED` and withholds the result.
+- Alternatives: return a synthetic pre-execution block; release a result without evidence; continue using a failed audit log.
+- Why: enforcement evidence is required for the release decision, and the client must not be misled about whether target code ran.
+- Trade-off: a transient audit failure requires a new session even when the protected target was otherwise healthy.
+- Source: integration-tested production hardening.
+
 ## 2026-07-15 — Publication states remain explicit
 
 - Decision: Prepare Pages, GHCR, Release, video, repository, and feedback handoffs but keep their links marked pending until each external destination is actually verified.
@@ -20,8 +36,8 @@
 
 - Decision: Evaluate 40 deterministic fixtures without network calls, publish explicit limitations, ship a read-only snapshot, and package the same build as a non-root read-only container.
 - Alternatives: report synthetic model quality as live results; require an API key for judging; make the dashboard the enforcement path.
-- Why: judges need a reproducible security demonstration that cannot leak credentials and remains honest about deferred live-model acceptance.
-- Trade-off: GPT escalation and cache metrics are structural/offline measurements until billing is activated.
+- Why: judges need a reproducible security demonstration that cannot leak credentials and remains honest about the limits of one sanitized live integration proof.
+- Trade-off: the offline corpus measures deterministic behavior; it does not establish live-model quality or production prevalence.
 - Source: human requirement, implemented and verified by Codex.
 
 ## 2026-07-15 — Browser server lifecycle stays inside the Playwright worker

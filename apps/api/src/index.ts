@@ -10,20 +10,28 @@ import { redactAuditPayload, resolveAuditReadFile, verifyAndReadAuditFile } from
 import { readTrustBaseline } from "@toolbastion/policy";
 import { generateSessionReport, renderMarkdownReport } from "@toolbastion/reports";
 import { formatZodIssues, TOOLBASTION_VERSION, toolbastionConfigSchema } from "@toolbastion/shared";
-import { loadRuntimeSession } from "./runtime-events.js";
+import { loadRuntimeSession, type RuntimeSourceState } from "./runtime-events.js";
+import { RuntimeEventTailer } from "./runtime-event-tailer.js";
 
 const eventSchema = z.object({
   eventId: z.string(),
   sessionId: z.string(),
+  callId: z.string().optional(),
   timestamp: z.string(),
   eventType: z.string(),
   riskLevel: z.string(),
   toolName: z.string().optional(),
-  decision: z.string().optional(),
+  decision: z.enum(["ALLOW", "ASK_USER", "BLOCK", "REDACT", "QUARANTINE"]).optional(),
   summary: z.string(),
   latencyMs: z.number().nonnegative().default(0),
   judgeTokens: z.number().int().nonnegative().default(0),
-  cacheHit: z.boolean().default(false)
+  cacheHit: z.boolean().default(false),
+  authorizationDecision: z.string().optional(),
+  executionState: z.string().optional(),
+  outputDecision: z.string().optional(),
+  decisionSource: z.string().default("deterministic"),
+  evidenceState: z.string().default("AVAILABLE"),
+  reasonCodes: z.array(z.string()).default([])
 });
 const sessionSchema = z.object({
   sessionId: z.string(),
@@ -34,6 +42,7 @@ const sessionSchema = z.object({
   events: z.array(eventSchema)
 });
 type SnapshotSession = z.infer<typeof sessionSchema>;
+type EvidenceSelection = { session: SnapshotSession; sourceState: RuntimeSourceState; reasonCode: string };
 
 const attackScenarioSchema = z.object({ id: z.string(), title: z.string(), category: z.string(), expected: z.string(), actual: z.string(), summary: z.string() });
 
@@ -67,18 +76,51 @@ async function loadSession(filePath: string): Promise<SnapshotSession> {
 }
 
 function metrics(session: SnapshotSession) {
-  const decisions = session.events.filter((event) => event.decision);
-  const count = (decision: string) => decisions.filter((event) => event.decision === decision).length;
+  type Lifecycle = { terminal?: z.infer<typeof eventSchema>; authorization?: z.infer<typeof eventSchema>; cacheHit: boolean };
+  const calls = new Map<string, Lifecycle>();
+  for (const event of session.events) {
+    if (!event.callId) continue;
+    const lifecycle = calls.get(event.callId) ?? { cacheHit: false };
+    lifecycle.cacheHit ||= event.cacheHit;
+    if (event.eventType === "authorization_completed") lifecycle.authorization = event;
+    if (event.eventType === "call_completed" || event.eventType === "call_blocked") lifecycle.terminal = event;
+    calls.set(event.callId, lifecycle);
+  }
+  // Recorded v1 fixtures predate call identifiers. They remain visibly recorded
+  // and retain their historical metrics; live runtime evidence always follows
+  // the lifecycle branch below.
+  if (calls.size === 0) {
+    const decisions = session.events.filter((event) => event.decision !== undefined);
+    const countLegacy = (decision: string) => decisions.filter((event) => event.decision === decision).length;
+    return {
+      totalToolCalls: decisions.length,
+      allows: countLegacy("ALLOW"),
+      blocks: countLegacy("BLOCK"),
+      askUser: countLegacy("ASK_USER"),
+      quarantines: countLegacy("QUARANTINE"),
+      deterministicResolutionRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens === 0).length / decisions.length,
+      judgeEscalationRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens > 0).length / decisions.length,
+      judgeTokens: session.events.reduce((sum, event) => sum + event.judgeTokens, 0),
+      cacheHitRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.cacheHit).length / decisions.length
+    };
+  }
+  const completed = [...calls.values()].filter((call) => call.terminal !== undefined);
+  const decision = (call: Lifecycle): "ALLOW" | "ASK_USER" | "BLOCK" | "QUARANTINE" => {
+    if (call.terminal?.eventType === "call_blocked") return call.authorization?.authorizationDecision === "ASK_USER" || call.terminal.authorizationDecision === "ASK_USER" ? "ASK_USER" : "BLOCK";
+    if (call.terminal?.outputDecision === "QUARANTINE") return "QUARANTINE";
+    return "ALLOW";
+  };
+  const count = (value: ReturnType<typeof decision>) => completed.filter((call) => decision(call) === value).length;
   return {
-    totalToolCalls: decisions.length,
+    totalToolCalls: completed.length,
     allows: count("ALLOW"),
     blocks: count("BLOCK"),
     askUser: count("ASK_USER"),
     quarantines: count("QUARANTINE"),
-    deterministicResolutionRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens === 0).length / decisions.length,
-    judgeEscalationRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.judgeTokens > 0).length / decisions.length,
-    judgeTokens: session.events.reduce((sum, event) => sum + event.judgeTokens, 0),
-    cacheHitRate: decisions.length === 0 ? 0 : decisions.filter((event) => event.cacheHit).length / decisions.length
+    deterministicResolutionRate: completed.length === 0 ? 0 : completed.filter((call) => call.authorization?.decisionSource !== "semantic_judge").length / completed.length,
+    judgeEscalationRate: completed.length === 0 ? 0 : completed.filter((call) => call.authorization?.decisionSource === "semantic_judge").length / completed.length,
+    judgeTokens: completed.reduce((sum, call) => sum + (call.authorization?.judgeTokens ?? 0), 0),
+    cacheHitRate: completed.length === 0 ? 0 : completed.filter((call) => call.cacheHit).length / completed.length
   };
 }
 
@@ -114,14 +156,20 @@ export async function createApi(options: ApiOptions) {
     ? toolbastionConfigSchema.parse(parse(await readFile(options.configPath, "utf8")))
     : undefined;
   const eventLogPath = options.eventLogPath ?? (runtimeConfig ? path.join(runtimeConfig.project_root, ".toolbastion", "runtime-events.jsonl") : undefined);
+  const runtimeTailer = eventLogPath === undefined
+    ? undefined
+    : new RuntimeEventTailer(eventLogPath, runtimeConfig?.target.name ?? session.targetName, runtimeConfig?.mode ?? "unknown", runtimeConfig?.runtime_events.retain_files ?? 0);
 
-  const currentSession = async (): Promise<SnapshotSession> => {
-    if (eventLogPath) {
-      try {
-        return sessionSchema.parse(await loadRuntimeSession(eventLogPath, runtimeConfig?.target.name ?? session.targetName, runtimeConfig?.mode ?? "unknown"));
-      } catch { /* A missing, incomplete, or invalid live log falls back to the verified fixture. */ }
+  const currentSession = async (): Promise<EvidenceSelection> => {
+    if (!eventLogPath) return { session, sourceState: "RECORDED_SNAPSHOT", reasonCode: "recorded_snapshot_selected" };
+    const runtime = runtimeTailer === undefined
+      ? await loadRuntimeSession(eventLogPath, runtimeConfig?.target.name ?? session.targetName, runtimeConfig?.mode ?? "unknown")
+      : await runtimeTailer.snapshot();
+    if (runtime.sourceState === "LIVE_HEALTHY" || runtime.sourceState === "LIVE_PARTIAL") {
+      return { session: sessionSchema.parse(runtime.session), sourceState: runtime.sourceState, reasonCode: runtime.reasonCode };
     }
-    return session;
+    // A verified fixture may still be browsed, but its source is never relabeled as active runtime evidence.
+    return { session, sourceState: runtime.sourceState, reasonCode: runtime.reasonCode };
   };
 
   app.get("/api/health", () => ({ status: "ok" }));
@@ -131,33 +179,37 @@ export async function createApi(options: ApiOptions) {
     const config = toolbastionConfigSchema.parse(parse(await readFile(options.configPath, "utf8")));
     return { configured: true, openaiConfigured: Boolean(process.env.OPENAI_API_KEY), mode: config.judge.mode, runtimeMode: config.mode };
   });
+  app.get("/api/evidence/status", async () => {
+    const active = await currentSession();
+    return { sourceState: active.sourceState, reasonCode: active.reasonCode, sessionId: active.session.sessionId };
+  });
   app.get("/api/sessions", async () => {
     const active = await currentSession();
-    return [{ ...active, events: undefined, eventCount: active.events.length, metrics: metrics(active) }];
+    return [{ ...active.session, events: undefined, eventCount: active.session.events.length, metrics: metrics(active.session), sourceState: active.sourceState, reasonCode: active.reasonCode }];
   });
   app.get("/api/sessions/:sessionId", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
     const active = await currentSession();
-    return sessionId === active.sessionId ? { ...active, metrics: metrics(active) } : reply.code(404).send({ error: "session_not_found" });
+    return sessionId === active.session.sessionId ? { ...active.session, metrics: metrics(active.session), sourceState: active.sourceState, reasonCode: active.reasonCode } : reply.code(404).send({ error: "session_not_found" });
   });
   app.get("/api/sessions/:sessionId/events", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
     const active = await currentSession();
-    return sessionId === active.sessionId ? active.events : reply.code(404).send({ error: "session_not_found" });
+    return sessionId === active.session.sessionId ? { events: active.session.events, sourceState: active.sourceState, reasonCode: active.reasonCode } : reply.code(404).send({ error: "session_not_found" });
   });
   app.get("/api/sessions/:sessionId/metrics", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
     const active = await currentSession();
-    return sessionId === active.sessionId ? metrics(active) : reply.code(404).send({ error: "session_not_found" });
+    return sessionId === active.session.sessionId ? { ...metrics(active.session), sourceState: active.sourceState, reasonCode: active.reasonCode } : reply.code(404).send({ error: "session_not_found" });
   });
   app.get("/api/sessions/:sessionId/report", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
     const active = await currentSession();
-    if (sessionId !== active.sessionId) return reply.code(404).send({ error: "session_not_found" });
+    if (sessionId !== active.session.sessionId) return reply.code(404).send({ error: "session_not_found" });
     const query = z.object({ format: z.enum(["json", "markdown"]).default("markdown") }).parse(request.query);
     const extension = query.format === "json" ? "json" : "md";
     let content: string;
-    if (active.label === "LIVE LOCAL SESSION" && runtimeConfig) {
+    if ((active.sourceState === "LIVE_HEALTHY" || active.sourceState === "LIVE_PARTIAL") && runtimeConfig) {
       let report: Awaited<ReturnType<typeof generateSessionReport>>;
       try {
         report = await generateSessionReport(await resolveAuditReadFile(runtimeConfig.project_root, runtimeConfig.audit.directory, sessionId));
@@ -173,9 +225,9 @@ export async function createApi(options: ApiOptions) {
   app.get("/api/sessions/:sessionId/audit", async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };
     const active = await currentSession();
-    if (sessionId !== active.sessionId) return reply.code(404).send({ error: "session_not_found" });
+    if (sessionId !== active.session.sessionId) return reply.code(404).send({ error: "session_not_found" });
     let file: string;
-    if (active.label === "LIVE LOCAL SESSION" && runtimeConfig) {
+    if ((active.sourceState === "LIVE_HEALTHY" || active.sourceState === "LIVE_PARTIAL") && runtimeConfig) {
       try {
         file = await resolveAuditReadFile(runtimeConfig.project_root, runtimeConfig.audit.directory, sessionId);
       } catch {
@@ -227,26 +279,28 @@ export async function createApi(options: ApiOptions) {
     };
     reply.hijack();
     reply.raw.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-    for (const event of active.events) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-    if (active.label === "OFFLINE FIXTURE REPLAY") {
+    for (const event of active.session.events) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    if ((active.sourceState !== "LIVE_HEALTHY" && active.sourceState !== "LIVE_PARTIAL") || runtimeTailer === undefined) {
       reply.raw.end();
       close();
       return;
     }
-    let sent = active.events.length;
-    const timer = setInterval(() => {
-      void currentSession().then((next) => {
-        if (next.sessionId !== active.sessionId) {
-          reply.raw.end();
-          close();
-          return;
-        }
-        for (const event of next.events.slice(sent)) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-        sent = next.events.length;
-      }).catch(() => undefined);
-    }, 500);
-    reply.raw.once("close", () => { clearInterval(timer); close(); });
+    const sent = new Set(active.session.events.map((event) => event.eventId));
+    const heartbeat = setInterval(() => { reply.raw.write(": keep-alive\n\n"); }, 15_000);
+    heartbeat.unref();
+    const unsubscribe = runtimeTailer.subscribe((update) => {
+      if (update.type === "event") {
+        if (sent.has(update.event.eventId)) return;
+        sent.add(update.event.eventId);
+        reply.raw.write(`data: ${JSON.stringify(update.event)}\n\n`);
+        return;
+      }
+      if (update.state.sourceState !== "LIVE_HEALTHY" && update.state.sourceState !== "LIVE_PARTIAL") reply.raw.end();
+    });
+    reply.raw.once("close", () => { clearInterval(heartbeat); unsubscribe(); close(); });
   });
+
+  app.addHook("onClose", () => { runtimeTailer?.close(); });
 
   if (options.dashboardRoot) {
     await app.register(fastifyStatic, { root: options.dashboardRoot, prefix: "/", index: ["index.html"] });

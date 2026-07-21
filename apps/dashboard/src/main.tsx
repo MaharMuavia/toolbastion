@@ -27,8 +27,10 @@ type Session = {
   events: Event[];
   metrics: { totalToolCalls: number; allows: number; blocks: number; askUser: number; quarantines: number; deterministicResolutionRate: number; judgeEscalationRate: number; judgeTokens: number; cacheHitRate: number };
   staticLabel?: string;
+  sourceState?: "LIVE_HEALTHY" | "LIVE_PARTIAL" | "LIVE_STALE" | "LIVE_INVALID" | "LIVE_CLOSED" | "RECORDED_SNAPSHOT";
+  reasonCode?: string;
 };
-type SessionSummary = Pick<Session, "sessionId" | "label">;
+type SessionSummary = Pick<Session, "sessionId" | "label" | "sourceState" | "reasonCode">;
 type PolicyDetail = { yaml: string; valid: boolean; mode: string };
 type Scenario = { id: string; title: string; category: string; expected: string; actual?: string; summary: string };
 type ScenarioResult = { scenarioId: string; expected: string; actual: string; matched: boolean; summary: string };
@@ -286,7 +288,8 @@ function App() {
   if (liveError && !readOnly) return <main className="center"><section className="empty" aria-live="polite"><p className="eyebrow">LIVE RUNTIME UNAVAILABLE</p><h1>{liveError === "Authentication failed" ? "Authentication failed" : "Live runtime unavailable"}</h1><p>Reason: {liveError}</p><button className="text-action" type="button" onClick={() => { setLiveError(""); setSession(null); }}>Retry live connection</button><button className="text-action" type="button" onClick={() => void openSnapshot()}>Open verified recorded snapshot</button><button className="text-action" type="button" onClick={openLanding}>Back to product overview</button></section></main>;
   if (!session) return <main className="center"><p className="loading">Loading verified session…</p></main>;
 
-  const recorded = readOnly || session.label === "OFFLINE FIXTURE REPLAY";
+  const recorded = readOnly || (session.sourceState !== "LIVE_HEALTHY" && session.sourceState !== "LIVE_PARTIAL") || session.label === "OFFLINE FIXTURE REPLAY";
+  const sourceState = readOnly ? "RECORDED_SNAPSHOT" : session.sourceState ?? "RECORDED_SNAPSHOT";
 
   return <div className="shell">
     <aside className="sidebar">
@@ -309,6 +312,8 @@ function App() {
     <main className="dashboard-main">
       {downloadError && <p className="alert" role="status">{downloadError}</p>}
       <header className="dashboard-header"><div><p className="eyebrow">PROTECTED SESSION</p><h1>Runtime overview</h1><p className="subtitle">{recorded ? session.staticLabel ?? "Verified recorded evidence. No live target is connected." : "One target. Every call inspected before execution."}</p></div><div className="header-actions"><button className="dashboard-return" type="button" onClick={openLanding}>Product overview</button><span className="badge">{readOnly ? "READ-ONLY SNAPSHOT" : session.label}</span><span className="mode"><Icon name="activity" />{session.mode}</span></div></header>
+      {sourceState === "LIVE_PARTIAL" && <section className="alert" aria-live="polite"><span className="risk-dot high"></span><div><p className="eyebrow">LIVE EVIDENCE · BOUNDED RETENTION</p><strong>Earlier dashboard lifecycle entries were rotated. Download the verified audit log for complete session evidence.</strong></div></section>}
+      {sourceState !== "LIVE_HEALTHY" && sourceState !== "LIVE_PARTIAL" && <section className="alert" aria-live="polite"><span className="risk-dot high"></span><div><p className="eyebrow">NOT LIVE EVIDENCE</p><strong>{sourceState.replaceAll("_", " ")} · {session.reasonCode?.replaceAll("_", " ") ?? "recorded snapshot selected"}</strong></div></section>}
       <section className="metrics" id="overview">
         <Metric icon="activity" tone="blue" label="Tool calls" value={session.metrics.totalToolCalls} note={`${session.targetName} target`} />
         <Metric icon="overview" tone="mint" label="Deterministic" value={`${Math.round(session.metrics.deterministicResolutionRate * 100)}%`} note="Resolved without GPT" />

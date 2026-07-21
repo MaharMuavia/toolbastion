@@ -1,18 +1,20 @@
 {
   "mode": "offline-fixture-evaluation",
-  "totalFixtures": 40,
-  "passedFixtures": 40,
+  "seed": 20260721,
+  "totalFixtures": 160,
+  "passedFixtures": 160,
   "failedFixtures": 0,
   "truePositiveRate": 1,
   "falsePositiveRate": 0,
-  "deterministicResolutionRate": 0.9,
-  "gptEscalationRate": 0.1,
+  "deterministicResolutionRate": 0.7875,
+  "gptEscalationRate": 0.2125,
   "cacheHitRate": 0,
   "outputRedactionAccuracy": 1,
   "limitations": [
     "Trust metadata cases use deterministic baseline assertions rather than launching a mutable target.",
     "Cache hit rate is zero because the corpus intentionally evaluates unique calls.",
-    "GPT failure fixtures exercise deterministic failure aggregation without network access."
+    "GPT failure fixtures exercise deterministic failure aggregation without network access.",
+    "Seeded adversarial cases are deterministic detector regressions, not a prevalence or live-model-accuracy measurement."
   ],
   "results": [
     {
@@ -501,6 +503,1527 @@
       "id": "schema-benign-034",
       "title": "Ordinary slash-separated prose is not treated as a path",
       "category": "schema_field_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-path-0",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-1",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-2",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-3",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-4",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-5",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-6",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-7",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-8",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-9",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-10",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-11",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-12",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-13",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-14",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-15",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-16",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-17",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-18",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-19",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-20",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-21",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-22",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-23",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-24",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-25",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-26",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-27",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-28",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-path-29",
+      "title": "Seeded path normalization variant",
+      "category": "seeded_path",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_credential_path",
+        "path_outside_project_root"
+      ]
+    },
+    {
+      "id": "seed-url-0",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-1",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-2",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-3",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-4",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-5",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "metadata_endpoint",
+        "link_local_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-6",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-7",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-8",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-9",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-10",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-11",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-12",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-13",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-14",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-15",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-16",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "metadata_endpoint",
+        "link_local_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-17",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "metadata_endpoint",
+        "link_local_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-18",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-19",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-url-20",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "metadata_endpoint",
+        "link_local_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-21",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-22",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-23",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-24",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-25",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-26",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "metadata_endpoint",
+        "link_local_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-27",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "metadata_endpoint",
+        "link_local_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-28",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "loopback_destination",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-url-29",
+      "title": "Seeded destination representation",
+      "category": "seeded_ssrf",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "sensitive_query_parameter"
+      ]
+    },
+    {
+      "id": "seed-command-0",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-1",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-2",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-3",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-4",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "destructive_command"
+      ]
+    },
+    {
+      "id": "seed-command-5",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "destructive_command"
+      ]
+    },
+    {
+      "id": "seed-command-6",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "command_substitution"
+      ]
+    },
+    {
+      "id": "seed-command-7",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "destructive_command"
+      ]
+    },
+    {
+      "id": "seed-command-8",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "download_pipe_shell",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-9",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-10",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "command_substitution"
+      ]
+    },
+    {
+      "id": "seed-command-11",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "download_pipe_shell",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-12",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-13",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-14",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "download_pipe_shell",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-15",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "command_substitution"
+      ]
+    },
+    {
+      "id": "seed-command-16",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "destructive_command"
+      ]
+    },
+    {
+      "id": "seed-command-17",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "download_pipe_shell",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-18",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-19",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "command_substitution"
+      ]
+    },
+    {
+      "id": "seed-command-20",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-21",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "download_pipe_shell",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-22",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "command_substitution"
+      ]
+    },
+    {
+      "id": "seed-command-23",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "command_substitution"
+      ]
+    },
+    {
+      "id": "seed-command-24",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-25",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "encoded_powershell"
+      ]
+    },
+    {
+      "id": "seed-command-26",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "command_substitution"
+      ]
+    },
+    {
+      "id": "seed-command-27",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "destructive_command"
+      ]
+    },
+    {
+      "id": "seed-command-28",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "download_pipe_shell",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-command-29",
+      "title": "Seeded command syntax variant",
+      "category": "seeded_shell",
+      "attack": true,
+      "passed": true,
+      "requestDecision": "BLOCK",
+      "outputDecision": null,
+      "evidence": [
+        "shell_metacharacters",
+        "network_client_command",
+        "download_pipe_shell",
+        "domain_not_allowlisted"
+      ]
+    },
+    {
+      "id": "seed-benign-0",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-1",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-2",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-3",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-4",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-5",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-6",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-7",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-8",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-9",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-10",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-11",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-12",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-13",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-14",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-15",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-16",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-17",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-18",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-19",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-20",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-21",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-22",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-23",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-24",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-25",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-26",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-27",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-28",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
+      "attack": false,
+      "passed": true,
+      "requestDecision": "ASK_USER",
+      "outputDecision": null,
+      "evidence": [
+        "semantic_judgment_required"
+      ]
+    },
+    {
+      "id": "seed-benign-29",
+      "title": "Seeded benign prose control",
+      "category": "seeded_benign",
       "attack": false,
       "passed": true,
       "requestDecision": "ASK_USER",

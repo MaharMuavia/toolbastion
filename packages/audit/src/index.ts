@@ -12,11 +12,12 @@ const AUDIT_FORMAT_VERSION = 2;
 const SESSION_START_EVENT = "audit_session_started";
 const SESSION_SEAL_EVENT = "audit_session_sealed";
 
-type UnsignedReceipt = Omit<BastionReceipt, "signature">;
+type UnsignedReceipt = Omit<BastionReceipt, "signature" | "signatureStatus">;
 
 function unsignedReceipt(receipt: BastionReceipt): UnsignedReceipt {
   const unsigned = { ...receipt };
   delete (unsigned as Partial<BastionReceipt>).signature;
+  delete (unsigned as Partial<BastionReceipt>).signatureStatus;
   return unsigned as UnsignedReceipt;
 }
 
@@ -28,25 +29,51 @@ export function signReceipt(unsigned: UnsignedReceipt, privateKeyPem = process.e
   const signature = sign(null, Buffer.from(canonicalJson(unsigned), "utf8"), privateKey).toString("base64");
   return bastionReceiptSchema.parse({
     ...unsigned,
+    signatureStatus: "signed",
     signature: { algorithm: "ed25519", keyId: sha256(publicKey), publicKey, value: signature }
   });
 }
 
-export function verifyReceipt(receipt: unknown): { valid: boolean; errors: string[] } {
+export function verifyReceipt(receipt: unknown, trustedPublicKeyPem?: string): { valid: boolean; errors: string[] } {
   const parsed = bastionReceiptSchema.safeParse(receipt);
   if (!parsed.success) return { valid: false, errors: parsed.error.issues.map((issue) => issue.message) };
   const value = parsed.data;
   const errors: string[] = [];
+  if (value.signatureStatus !== "signed" || value.signature === undefined) return { valid: false, errors: ["receipt is unsigned"] };
   if (value.signature.keyId !== sha256(value.signature.publicKey)) errors.push("receipt public key id is invalid");
   try {
     const key = createPublicKey(value.signature.publicKey);
     if (key.asymmetricKeyType !== "ed25519") errors.push("receipt public key is not Ed25519");
     else if (!verify(null, Buffer.from(canonicalJson(unsignedReceipt(value)), "utf8"), key, Buffer.from(value.signature.value, "base64"))) errors.push("receipt signature is invalid");
+    if (trustedPublicKeyPem !== undefined) {
+      const trustedKey = createPublicKey(trustedPublicKeyPem);
+      const trustedPublicKey = trustedKey.export({ type: "spki", format: "pem" }).toString();
+      if (trustedKey.asymmetricKeyType !== "ed25519" || trustedPublicKey !== value.signature.publicKey || sha256(trustedPublicKey) !== value.signature.keyId) {
+        errors.push("receipt key is not the configured trusted operator key");
+      }
+    }
   } catch { errors.push("receipt public key is invalid"); }
   if (value.authorizationDecision === "BLOCK_BEFORE_EXECUTION" && value.executionState !== "NOT_DISPATCHED") errors.push("pre-execution block has an invalid execution state");
   if (value.executionState === "NOT_DISPATCHED" && value.outputDecision !== "NOT_INSPECTED") errors.push("undispatched call has an invalid output decision");
   if (value.completedAt === undefined) errors.push("receipt is incomplete");
+  else if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) errors.push("receipt completion time precedes start time");
   return { valid: errors.length === 0, errors };
+}
+
+export async function writeReceiptFile(projectRoot: string, configuredDirectory: string, receipt: BastionReceipt): Promise<string> {
+  if (!/^[A-Za-z0-9-]+$/.test(receipt.callId)) throw new Error("receipt call id contains invalid characters");
+  if (path.isAbsolute(configuredDirectory)) throw new Error("receipts.directory must be relative to project_root");
+  const root = await realpath(path.resolve(projectRoot));
+  const directory = path.resolve(root, configuredDirectory);
+  if (!isWithinDirectory(root, directory)) throw new Error("receipts.directory must stay inside project_root");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const canonicalDirectory = await realpath(directory);
+  if (!isWithinDirectory(root, canonicalDirectory)) throw new Error("receipts.directory resolves outside project_root");
+  const filePath = path.join(canonicalDirectory, `${receipt.callId}.json`);
+  const handle = await open(filePath, "wx", 0o600);
+  try { await handle.writeFile(`${canonicalJson(receipt)}\n`, "utf8"); await handle.sync(); }
+  finally { await handle.close(); }
+  return filePath;
 }
 
 export function redactAuditPayload(value: unknown, key = ""): unknown {
@@ -106,7 +133,11 @@ export async function resolveAuditReadFile(projectRoot: string, configuredDirect
   return canonicalFile;
 }
 
-export type AuditLogOptions = { retainRawContent: false };
+export type AuditLogOptions = {
+  retainRawContent: false;
+  /** Test-only dependency seam for exercising the proxy's fail-closed path. */
+  failWriteForEvent?: (eventType: string) => boolean;
+};
 
 export class AuditLog {
   readonly sessionId: string;
@@ -119,11 +150,13 @@ export class AuditLog {
   #closed = false;
   #writeFailed = false;
   readonly #retainRawContent: false;
+  readonly #failWriteForEvent: ((eventType: string) => boolean) | undefined;
 
   constructor(directory: string, sessionId: string = randomUUID(), options: AuditLogOptions = { retainRawContent: false }) {
     this.sessionId = sessionId;
     this.filePath = auditFilePath(directory, sessionId);
     this.#retainRawContent = options.retainRawContent;
+    this.#failWriteForEvent = options.failWriteForEvent;
   }
 
   async start(): Promise<void> {
@@ -197,6 +230,7 @@ export class AuditLog {
   async #writeEvent(eventType: string, payload: Record<string, unknown>): Promise<AuditEvent> {
     const handle = this.#handle;
     if (!handle) throw new Error("Audit session is not open");
+    if (this.#failWriteForEvent?.(eventType) === true) throw new Error("Injected audit persistence failure");
     const base = unsignedEvent({
       sequence: this.#sequence + 1,
       eventId: randomUUID(),

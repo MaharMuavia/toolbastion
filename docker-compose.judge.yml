@@ -7,6 +7,8 @@ services:
     ports:
       - "127.0.0.1:4782:4782"
     read_only: true
+    cap_drop:
+      - ALL
     tmpfs:
       - /tmp
     security_opt:

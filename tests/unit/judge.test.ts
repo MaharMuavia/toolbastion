@@ -35,9 +35,9 @@ describe("live judge proof", () => {
     reason: "The raw command is intentionally withheld from the external judge.",
     reasonCodes: ["judge_unavailable"],
     subchecks: [
-      { checkName: "scope_safety", verdict: "unavailable", riskLevel: "medium", reason: "private rationale", evidence: [] },
-      { checkName: "exfiltration_risk", verdict: "unavailable", riskLevel: "medium", reason: "private rationale", evidence: [] },
-      { checkName: "tool_integrity", verdict: "suspicious", riskLevel: "high", reason: "private rationale", evidence: [] }
+      { checkName: "scope_safety", verdict: "safe", riskLevel: "low", reason: "private rationale", evidence: [] },
+      { checkName: "exfiltration_risk", verdict: "suspicious", riskLevel: "high", reason: "private rationale", evidence: [] },
+      { checkName: "tool_integrity", verdict: "safe", riskLevel: "low", reason: "private rationale", evidence: [] }
     ],
     model: "gpt-5.6",
     latencyMs: 123,
@@ -62,7 +62,12 @@ describe("live judge proof", () => {
       capturedAt: "2026-07-20T00:00:00.000Z",
       testCase: { id: "proof", toolName: "run_project_command", runtimeMode: "interactive", baseRisk: "high" },
       verdict: { ...liveVerdict, model: "unavailable" }
-    })).toThrow("successful non-replay");
+    })).toThrow("three grounded");
+    expect(() => createLiveJudgeProof({
+      capturedAt: "2026-07-21T00:00:00.000Z",
+      testCase: { id: "proof", toolName: "run_project_command", runtimeMode: "interactive", baseRisk: "high" },
+      verdict: { ...liveVerdict, subchecks: [{ ...liveVerdict.subchecks[0]!, verdict: "unavailable" }] }
+    })).toThrow("three grounded");
   });
 });
 
@@ -113,7 +118,7 @@ describe("judge prompt boundaries", () => {
     expect(prompt).not.toContain(argumentKeySentinel);
     expect(prompt).not.toContain(argumentValueSentinel);
     expect(prompt).not.toContain(policySentinel);
-    expect(prompt).toContain("declaredIntent");
+    expect(prompt).toContain("intentCategory");
   });
 
   it("distinguishes safe test execution from destructive execution without raw commands", () => {

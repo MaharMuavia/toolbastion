@@ -10,7 +10,7 @@
   <a href="https://maharmuavia.github.io/toolbastion/"><img alt="Live security console" src="https://img.shields.io/badge/live-security_console-0d9f6e" /></a>
   <a href="https://github.com/MaharMuavia/toolbastion/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/MaharMuavia/toolbastion" /></a>
   <a href="LICENSE"><img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-2563eb" /></a>
-  <img alt="Evaluation 40/40" src="https://img.shields.io/badge/offline_evaluation-40%2F40-7c3aed" />
+  <img alt="Evaluation 160/160" src="https://img.shields.io/badge/offline_evaluation-160%2F160-7c3aed" />
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 
 ![ToolBastion security console showing blocked MCP attacks](docs/screenshots/dashboard-overview.png)
 
-ToolBastion is an MCP server to the coding agent and an MCP client to one local stdio target. It verifies tool metadata and advertised input contracts, applies deterministic policy before execution, sends only genuinely ambiguous calls to three structured GPT-5.6 checks, inspects returned content, and writes a redacted tamper-evident audit trail. In `enforce` and `interactive` modes, clear violations, unknown tools, invalid tool arguments, and unapproved metadata are blocked before the target tool body runs; `shadow` records the same decisions while forwarding for evaluation.
+ToolBastion is a local execution firewall and evidence layer for one stdio MCP server used by coding agents. It is an MCP server to the coding agent and an MCP client to one local stdio target. It verifies tool metadata and advertised input contracts, applies deterministic policy before execution, sends only genuinely ambiguous calls to three structured GPT-5.6 checks, inspects returned content, and writes a redacted tamper-evident audit trail. In `enforce` and `interactive` modes, clear violations, unknown tools, invalid tool arguments, and unapproved metadata are blocked before the target tool body runs; `shadow` records the same decisions while forwarding for evaluation.
 
 ## Limitations
 
@@ -100,7 +100,7 @@ flowchart LR
   H --> API["Local API + dashboard"]
 ```
 
-The API and dashboard are never in the enforcement path. They display the redacted lifecycle log produced by `toolbastion run` for a live local session. If live authentication or connectivity fails, the console reports that failure and requires an explicit user action before opening a verified recorded snapshot. Recorded Attack Lab fixtures remain labelled separately from live activity. See the [architecture](docs/architecture.md) and [threat model](SECURITY_ASSUMPTIONS.md).
+The API and dashboard are never in the enforcement path. They display the redacted lifecycle log produced by `toolbastion run` for a live local session. If live authentication or connectivity fails, the console reports that failure and requires an explicit user action before opening a verified recorded snapshot. Recorded Attack Lab fixtures remain labelled separately from live activity. The API uses one bounded JSONL tailer for all browser streams; it never rereads the log per connected browser. See the [architecture](docs/architecture.md) and [threat model](SECURITY_ASSUMPTIONS.md).
 
 <details>
 <summary><strong>What happens to one MCP call?</strong></summary>
@@ -115,14 +115,18 @@ The API and dashboard are never in the enforcement path. They display the redact
 
 ## Security decisions
 
-Authorization decisions are `ALLOW`, `ASK_USER`, or `BLOCK_BEFORE_EXECUTION`; execution states are `NOT_DISPATCHED`, `DISPATCHED`, `COMPLETED`, `FAILED`, `TIMED_OUT`, or `UNKNOWN`; output decisions are `NOT_INSPECTED`, `PASS`, `REDACT`, or `QUARANTINE`.
+Authorization decisions are `ALLOW`, `ASK_USER`, or `BLOCK_BEFORE_EXECUTION`; execution states are `NOT_DISPATCHED`, `DISPATCHED`, `COMPLETED`, `FAILED`, `TIMED_OUT`, or `UNKNOWN`; output decisions are `NOT_INSPECTED`, `NOT_RELEASED`, `PASS`, `REDACT`, or `QUARANTINE`. In enforce mode, an audit persistence failure fails closed. If it occurs after target execution, the client receives the truthful execution state with `NOT_RELEASED`; the target result is never returned.
+
+## Runtime evidence retention
+
+The dashboard lifecycle log is redacted operational telemetry, not the durable audit record. `runtime_events.max_bytes` controls each JSONL segment and `runtime_events.retain_files` controls bounded rotated segments. At a retention boundary the dashboard labels the session `LIVE PARTIAL` and points to the verified audit download for complete evidence. The runtime log contains only the published lifecycle contract: IDs, timestamps, safe tool names, decisions/states, risk, model IDs, token/latency metrics, cache status, reason codes, and evidence availability. It excludes arguments, paths, URLs, policy text, output, credentials, context, and model rationale.
 
 ## Receipt verification
 
-ToolBastion can verify signed Ed25519 call receipts without an API key or dashboard. The operator-held private key must be provided only through `TOOLBASTION_RECEIPT_PRIVATE_KEY`; it must never be committed or supplied to the target, Codex, or the judge. A receipt embeds its public verification key and key fingerprint:
+ToolBastion can verify signed Ed25519 call receipts without an API key or dashboard. Verification must be anchored to an operator-held public key; an embedded receipt key alone is not trusted. The operator-held private key must be provided only through `TOOLBASTION_RECEIPT_PRIVATE_KEY`; it must never be committed or supplied to the target, Codex, or the judge:
 
 ```powershell
-node .\apps\cli\dist\index.js receipt verify .\receipt.json
+node .\apps\cli\dist\index.js receipt verify .\receipt.json --trusted-key .\operator-public.pem
 ```
 
 Interactive mode returns an explicit `ASK_USER` result for ambiguous calls and never trusts an approval supplied by the coding agent itself. An independently authenticated operator-approval channel is required before approval can become a forwarding capability.
@@ -149,7 +153,7 @@ GPT-5.6 is not a general controller. After deterministic checks, an ambiguous ca
 
 TypeScript validates each result with Zod and aggregates it deterministically. Model output cannot weaken policy or override a hard deny. Timeouts, malformed output, unavailable credentials, and call-limit exhaustion are safe failures. The recorded replay is clearly labeled, performs no network call, and is rejected in enforce mode. Live mode is optional:
 
-An optional `judge.context_file` may provide bounded local intent (8 KiB by default). ToolBastion rejects paths outside `project_root`, keeps context text, argument keys/values, and policy details on the local machine, and sends a bounded structural argument profile, policy counts/enums, and a context-available flag to a live judge. It includes the locally redacted context hash in the exact-call cache key.
+An optional `judge.context_file` may provide bounded local intent (8 KiB by default). ToolBastion rejects paths outside `project_root` and keeps context text, raw arguments, raw commands/paths/URLs, policy YAML, credentials, and recent event contents local. Each live request carries only an allowlisted envelope: normalized tool category and operation; schema field names, JSON types, and required-field presence; a structural argument profile; path/destination/command-capability classifications; metadata-integrity state; deterministic reason codes; policy counts and enums; target-egress mode; base risk; runtime mode; and a context-available flag with a locally derived intent category or `unknown`. It includes the locally redacted context hash in the exact-call cache key.
 
 ```powershell
 node --env-file=.env.local .\scripts\judge-smoke.mjs --record
@@ -255,7 +259,7 @@ npm.cmd run artifact:prepare
 npm.cmd audit --audit-level=high
 ```
 
-The offline corpus currently passes 40/40 fixtures, including misleading argument-field attacks, benign controls, output inspection, trust tampering, and model-failure handling. These results do not claim live-model accuracy. See [evaluation methodology and limitations](docs/evaluation.md).
+The offline corpus currently passes 160/160 fixtures, including 40 curated cases and 120 deterministic seeded adversarial/benign variants. It covers misleading argument-field attacks, benign controls, output inspection, trust tampering, and model-failure handling. These results do not claim live-model accuracy. See [evaluation methodology and limitations](docs/evaluation.md).
 
 <details>
 <summary><strong>See the adversarial coverage</strong></summary>

@@ -229,8 +229,8 @@ export async function runProfessionalDemo(workspace: string, options: { cleanup:
 
     for (const line of diagnostics.split(/\r?\n/)) {
       try {
-        const event = JSON.parse(line) as { eventType?: string; payload?: { sessionId?: string } };
-        if (event.eventType === "session_started" && event.payload?.sessionId) sessionId = event.payload.sessionId;
+        const event = JSON.parse(line) as { eventType?: string; sessionId?: string };
+        if (event.eventType === "session_started" && event.sessionId) sessionId = event.sessionId;
       } catch { /* Human diagnostics are intentionally not JSON. */ }
     }
     if (sessionId === "unknown") throw new Error("Demo could not identify the audit session");

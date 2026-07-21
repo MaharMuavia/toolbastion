@@ -40,9 +40,11 @@ Say: “Trust does not end after execution. Returned prompt injection is quarant
 
 ## 2:05–2:25 — GPT-5.6
 
-Show the recorded judge event and label `OFFLINE FIXTURE REPLAY` prominently.
+Show the sanitized live proof first, then show the recorded judge event with `OFFLINE FIXTURE REPLAY` prominently.
 
-Say: “Only ambiguous calls use GPT-5.6. Scope, exfiltration and tool-integrity checks return validated structured results, then TypeScript aggregates them. This screen is a recorded offline replay; live acceptance is deferred until project billing is active.”
+Explain that the live proof carries only a privacy-safe structural envelope and that the recorded replay is separate, offline evidence rather than a substitute for a current session.
+
+Say: “Only ambiguous calls use GPT-5.6. Scope, exfiltration and tool-integrity checks return validated structured results, then TypeScript aggregates them. The Attack Lab is a recorded offline replay; the live console is labeled separately and uses only redacted lifecycle evidence.”
 
 ## 2:25–2:40 — Codex
 

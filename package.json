@@ -38,6 +38,7 @@
     "test:e2e": "playwright test",
     "demo:offline": "node ./apps/cli/dist/index.js demo",
     "evaluate": "node ./scripts/evaluate.mjs",
+    "benchmark": "node ./scripts/benchmark.mjs",
     "snapshot": "node ./scripts/generate-snapshot.mjs",
     "verify:snapshot": "node ./scripts/verify-snapshot.mjs",
     "artifact:prepare": "npm run build && npm run evaluate && npm run snapshot && npm run build && npm run verify:snapshot"

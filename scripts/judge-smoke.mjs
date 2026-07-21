@@ -16,12 +16,18 @@ const verdict = await judge.evaluateRequest({
   untrustedDescription: "Runs a project command in the current repository.",
   schemaSummary: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
   args: { command: "npm test" },
-  policySummary: { commandScope: "project-local", network: "deny" },
-  deterministicEvidence: [],
-  recentEvents: ["trust_verified"],
-  contextSummary: "Developer requested the project test suite.",
+  policySummary: {
+    paths: { allow: ["./src/**"], deny: ["**/.env", "**/.ssh/**", "**/.aws/**"] },
+    network: { default: "deny", allowDomains: [], allowedPorts: [80, 443], targetEgress: "blocked" },
+    toolRule: { action: "judge", baseRisk: "high" }
+  },
+  deterministicEvidence: [{ detector: "policy", category: "semantic_judgment_required", severity: "medium", message: "Locally classified ambiguity" }],
+  recentEvents: [],
+  contextSummary: "command_execution",
   baseRisk: "high",
-  runtimeMode: "interactive"
+  runtimeMode: "interactive",
+  toolMetadataIntegrity: "verified",
+  targetEgress: "blocked"
 });
 
 const recordProof = process.argv.includes("--record");
