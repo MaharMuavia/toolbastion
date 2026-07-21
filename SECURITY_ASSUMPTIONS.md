@@ -2,7 +2,7 @@
 
 ## Scope and assets
 
-ToolBastion protects agent-initiated MCP tool discovery, tool calls, and returned results for one local stdio target. Assets include project files, local credentials, network authority, command execution, approved tool metadata, policy, audit integrity, and the agent's future decisions.
+ToolBastion is a security gateway and evidence layer for mediated MCP calls, with optional target-process containment. It mediates agent-initiated MCP tool discovery, tool calls, and returned results for one local stdio target. Assets include project files, local credentials, network authority, command execution, approved tool metadata, policy, audit integrity, and the agent's future decisions.
 
 ToolBastion is not a general operating-system sandbox, endpoint protection product, identity provider, or remote MCP gateway. Its optional Docker profile confines one target to a no-network, read-only, capability-dropped container; it does not create a general egress proxy or protect a compromised host.
 
@@ -14,7 +14,7 @@ flowchart LR
   A["Coding agent"] -->|untrusted MCP input| W
   W -->|bounded semantic evidence| G["OpenAI Responses API"]
   W -->|untrusted stdio| T["Target MCP process"]
-  T -->|when explicitly configured| E["External egress proxy / sandbox"]
+  T -->|optional Docker --network=none| E["No-network target containment"]
   T -->|untrusted metadata + output| W
   W -->|redacted events| L["Local audit storage"]
   L --> D["Read-only API/dashboard"]
@@ -30,7 +30,7 @@ The ToolBastion installation, operating account, configured project root, and ex
 | Path escape | `../`, UNC/drive path, symlink outside root | canonical/real path checks, explicit deny patterns, pre-execution block | filesystem races and platform edge cases need continued review |
 | Secret access/exposure | `.env`, package-manager credentials, cloud profiles, private keys, Terraform state, returned key | deterministic credential-path denies, environment allowlist, recursive persistence redaction, output redaction | novel secret formats may evade pattern detection |
 | Shell injection | chaining, substitution, encoded PowerShell | metacharacter/destructive/download-pipe detectors, `shell: false` subprocesses | allowed commands still execute with the target account's OS rights |
-| SSRF/exfiltration | loopback, cloud metadata, private IP, unapproved domain | URL/host/address/IP normalization, protocol/port/domain rules, private/link-local/metadata and IPv4-mapped IPv6 denies; enforce mode blocks recognized target network/shell/command execution by default; optional Docker isolation uses `--network=none` | all-egress-denied containment does not provide permitted egress through an authenticated proxy; host compromise remains out of scope |
+| SSRF/exfiltration | loopback, cloud metadata, private IP, unapproved domain | schema-validated per-tool capability contracts, URL/host/address/IP normalization, protocol/port/domain rules, private/link-local/metadata and IPv4-mapped IPv6 denies; enforce mode requires Docker containment for declared network-denied, command, subprocess, or destructive capabilities and rejects `network: allowlist` until a real proxy exists | all-egress-denied containment does not provide permitted egress through an authenticated proxy; host compromise remains out of scope |
 | Tool rug pull | changed schema/description, poisoned metadata, or undeclared call argument | persistent canonical tool baseline, hash validation, strict advertised-input validation, explicit approve workflow | an already-approved malicious implementation can lie behind unchanged metadata |
 | Prompt injection in output | returned instruction to call another tool | output injection scan and quarantine before agent forwarding | semantic attacks outside current patterns may pass |
 | Policy tampering | edited baseline hash or weakened remediation | baseline self-hash, Zod validation, hard-deny invariants, regression verification | an attacker controlling both repository and trusted anchor can replace them |
@@ -44,7 +44,7 @@ The ToolBastion installation, operating account, configured project root, and ex
 
 - Deterministic hard denies cannot be overridden by GPT-5.6, Codex, cache, dashboard, or user-facing labels. `shadow` is the explicit exception to forwarding behavior: it records the hard-deny decision but forwards for evaluation.
 - Enforce mode fails closed when required policy, trust, audit, or judgment is unavailable.
-- Enforce mode does not forward recognized target network, shell, or command execution while `network.target_egress` is `blocked`. `target_egress: isolated` requires an immutable local Docker image and starts the target with `--network=none`; no operator assertion can bypass that startup check.
+- Enforce mode requires a reviewed capability contract for every target tool. Detectors provide supporting evidence only and cannot grant a capability. Declared network-denied, command, subprocess, or destructive capability requires an immutable Docker target with `--network=none`; `network: allowlist` fails closed until a real authenticated egress proxy exists.
 - A blocked tool call is not forwarded to the target in `enforce` and `interactive` modes.
 - Target results are inspected before forwarding to the agent.
 - Raw secrets are never intentionally logged or persisted.

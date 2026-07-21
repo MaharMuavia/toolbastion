@@ -3,10 +3,11 @@ import { expect, test } from "@playwright/test";
 import { createApi } from "../../apps/api/src/index.js";
 
 const root = path.resolve(".");
+const port = 4784;
 let app: Awaited<ReturnType<typeof createApi>>;
 test.beforeAll(async () => {
   app = await createApi({ rootDir: root, configPath: path.join(root, "toolbastion.config.example.yaml"), eventLogPath: path.join(root, ".test-tmp", "missing-runtime-events.jsonl"), dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
-  await app.listen({ host: "127.0.0.1", port: 4782 });
+  await app.listen({ host: "127.0.0.1", port });
 });
 test.afterAll(async () => app.close());
 

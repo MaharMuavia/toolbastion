@@ -6,13 +6,13 @@ Developer Tools
 
 ## One-line description
 
-ToolBastion is a local execution firewall and evidence layer for one stdio MCP server used by coding agents.
+ToolBastion is a security gateway and evidence layer for mediated MCP calls, with optional target-process containment.
 
 ## Full description
 
 Coding agents can gain powerful file, shell, and network capabilities through MCP, but a developer often has no independent control layer between an agent's request and the target tool. ToolBastion fills that gap. It presents a real MCP server to the agent and connects as an MCP client to one local stdio server, so tool metadata, arguments, execution decisions, and returned content pass through a dedicated security boundary.
 
-ToolBastion first verifies a persistent cryptographic hash of the approved tool baseline and detects added, removed, schema-changed, description-changed, or poisoned tools. Deterministic detectors normalize paths, URLs, and bare hosts and identify traversal, secret-file access, shell injection, destructive commands, SSRF, metadata endpoints, unapproved destinations, and policy tampering. Clear violations are hard denies that no model can override. In enforce mode, a blocked call never reaches the target tool body; recognized target network/shell/command execution is also blocked by default. The only execution opt-in uses an immutable Docker target image with `--network=none`, not an operator assertion. In shadow mode, the same decision pipeline can be evaluated without claiming enforcement.
+ToolBastion first verifies a persistent cryptographic hash of the approved tool baseline and detects added, removed, schema-changed, description-changed, capability-changed, or poisoned tools. Deterministic detectors normalize paths, URLs, and bare hosts and identify traversal, secret-file access, shell injection, destructive commands, SSRF, metadata endpoints, unapproved destinations, and policy tampering. Clear violations are hard denies that no model can override. In enforce mode, a blocked call never reaches the target tool body; every tool must also match an approved capability contract. Declared network-denied, command, subprocess, or destructive capabilities require an immutable Docker target image with `--network=none`; allowlisted target egress fails closed because no authenticated proxy exists. In shadow mode, the same decision pipeline can be evaluated without claiming enforcement.
 
 Only genuinely ambiguous calls reach GPT-5.6. ToolBastion launches three independent Responses API structured-output checks for scope safety, exfiltration risk, and tool integrity. Zod validates every result and TypeScript aggregates them using fixed rules. Model failure is safe and session call limits bound cost. A clearly labeled offline replay demonstrates the workflow without an API key; it never presents recorded results as live.
 

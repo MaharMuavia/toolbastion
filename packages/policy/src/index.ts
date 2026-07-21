@@ -3,9 +3,11 @@ import path from "node:path";
 import { inspectArguments, highestRisk } from "@toolbastion/detectors";
 import {
   canonicalJson,
+  capabilityContractSchema,
   deterministicResultSchema,
   sha256,
   TOOLBASTION_VERSION,
+  type CapabilityContract,
   type DeterministicResult,
   type RequestDecision,
   type RuntimeMode,
@@ -22,8 +24,25 @@ function scopedResources(value: unknown, key = ""): string[] {
   return [];
 }
 
+function capabilityFindings(toolName: string, config: ToolBastionConfig) {
+  const contract = config.capabilities.tools[toolName];
+  if (!contract) {
+    return [{ detector: "capability", category: "missing_capability_contract", severity: "critical" as const, message: "Tool has no operator-approved capability contract" }];
+  }
+  if (config.mode !== "enforce") return [];
+  if (contract.network === "allowlist") {
+    return [{ detector: "capability", category: "network_allowlist_unsupported", severity: "critical" as const, message: "Enforce mode does not provide an authenticated allowlisted egress proxy" }];
+  }
+  const requiresContainment = contract.network === "deny" || contract.command_exec || contract.subprocess || contract.destructive;
+  if (requiresContainment && config.target.isolation.provider !== "docker") {
+    return [{ detector: "capability", category: "capability_containment_required", severity: "critical" as const, message: "Declared network, command, subprocess, or destructive capability requires Docker containment in enforce mode" }];
+  }
+  return [];
+}
+
 export async function evaluateDeterministic(toolName: string, args: Record<string, unknown>, config: ToolBastionConfig): Promise<DeterministicResult> {
   const findings = await inspectArguments(toolName, args, config);
+  findings.push(...capabilityFindings(toolName, config));
   const rule = config.tools.rules[toolName];
   const action = rule?.action ?? config.tools.default;
   if (action === "block") {
@@ -88,11 +107,12 @@ const baselineToolSchema = z.object({
   inputSchema: z.record(z.string(), z.unknown()),
   schemaHash: z.string(),
   descriptionHash: z.string(),
-  riskClassification: z.string()
+  riskClassification: z.string(),
+  capabilities: capabilityContractSchema
 });
 
 export const trustBaselineSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   targetName: z.string(),
   toolbastionVersion: z.string(),
   createdAt: z.string(),
@@ -101,7 +121,8 @@ export const trustBaselineSchema = z.object({
 });
 export type TrustBaseline = z.infer<typeof trustBaselineSchema>;
 
-type ListedTool = { name: string; description?: string | undefined; inputSchema: Record<string, unknown> };
+export type ListedTool = { name: string; description?: string | undefined; inputSchema: Record<string, unknown> };
+export type CapabilityDeclarations = Record<string, CapabilityContract>;
 
 function assertUniqueToolNames(tools: Array<{ name: string }>, label: string): void {
   const names = new Set<string>();
@@ -115,7 +136,13 @@ function metadataPoisoned(description: string): boolean {
   return /ignore (?:all |any )?(?:previous|prior|system)|(?:read|send|upload).*(?:credential|\.env|secret)|contact external|bypass.*(?:policy|rule)/i.test(description);
 }
 
-export function createTrustBaseline(targetName: string, tools: ListedTool[], now = new Date()): TrustBaseline {
+function requiredCapabilities(toolName: string, capabilities: CapabilityDeclarations): CapabilityContract {
+  const contract = capabilities[toolName];
+  if (!contract) throw new Error(`Tool ${toolName} is missing a capability contract; use trust migrate or trust approve after declaring capabilities.tools.${toolName}`);
+  return capabilityContractSchema.parse(contract);
+}
+
+export function createTrustBaseline(targetName: string, tools: ListedTool[], capabilities: CapabilityDeclarations, now = new Date()): TrustBaseline {
   assertUniqueToolNames(tools, "Current tool inventory");
   const normalizedTools = tools.map((tool) => {
     const description = tool.description ?? "";
@@ -125,14 +152,18 @@ export function createTrustBaseline(targetName: string, tools: ListedTool[], now
       inputSchema: JSON.parse(canonicalJson(tool.inputSchema)) as Record<string, unknown>,
       schemaHash: sha256(tool.inputSchema),
       descriptionHash: sha256(description),
-      riskClassification: metadataPoisoned(description) ? "critical" : "unclassified"
+      riskClassification: metadataPoisoned(description) ? "critical" : "unclassified",
+      capabilities: requiredCapabilities(tool.name, capabilities)
     };
   }).sort((left, right) => left.name.localeCompare(right.name));
-  const unsigned = { version: 1 as const, targetName, toolbastionVersion: TOOLBASTION_VERSION, createdAt: now.toISOString(), tools: normalizedTools };
+  const unsigned = { version: 2 as const, targetName, toolbastionVersion: TOOLBASTION_VERSION, createdAt: now.toISOString(), tools: normalizedTools };
   return { ...unsigned, baselineHash: sha256(unsigned) };
 }
 
 export function verifyTrustBaseline(input: unknown): TrustBaseline {
+  if (z.object({ version: z.literal(1) }).passthrough().safeParse(input).success) {
+    throw new Error("Trust baseline v1 does not contain capability contracts; run trust migrate --yes after reviewing declared capabilities");
+  }
   const baseline = trustBaselineSchema.parse(input);
   assertUniqueToolNames(baseline.tools, "Trust baseline");
   const { baselineHash, ...unsigned } = baseline;
@@ -145,24 +176,26 @@ export type TrustDiff = {
   removed: string[];
   schemaChanged: string[];
   descriptionChanged: string[];
+  capabilityChanged: string[];
   poisoned: string[];
   unchanged: string[];
 };
 
-export function diffTrustBaseline(baseline: TrustBaseline, tools: ListedTool[], expectedTargetName?: string): TrustDiff {
+export function diffTrustBaseline(baseline: TrustBaseline, tools: ListedTool[], capabilities: CapabilityDeclarations, expectedTargetName?: string): TrustDiff {
   verifyTrustBaseline(baseline);
   if (expectedTargetName !== undefined && baseline.targetName !== expectedTargetName) {
     throw new Error(`Trust baseline target does not match configured target: ${baseline.targetName}`);
   }
   assertUniqueToolNames(tools, "Current tool inventory");
-  const current = new Map(createTrustBaseline(baseline.targetName, tools).tools.map((tool) => [tool.name, tool]));
+  const current = new Map(createTrustBaseline(baseline.targetName, tools, capabilities).tools.map((tool) => [tool.name, tool]));
   const approved = new Map(baseline.tools.map((tool) => [tool.name, tool]));
-  const result: TrustDiff = { added: [], removed: [], schemaChanged: [], descriptionChanged: [], poisoned: [], unchanged: [] };
+  const result: TrustDiff = { added: [], removed: [], schemaChanged: [], descriptionChanged: [], capabilityChanged: [], poisoned: [], unchanged: [] };
   for (const [name, tool] of current) {
     const prior = approved.get(name);
     if (!prior) result.added.push(name);
     else if (tool.schemaHash !== prior.schemaHash) result.schemaChanged.push(name);
     else if (tool.descriptionHash !== prior.descriptionHash) result.descriptionChanged.push(name);
+    else if (canonicalJson(tool.capabilities) !== canonicalJson(prior.capabilities)) result.capabilityChanged.push(name);
     else result.unchanged.push(name);
     if (tool.riskClassification === "critical") result.poisoned.push(name);
   }

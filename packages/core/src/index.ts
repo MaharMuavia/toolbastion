@@ -26,6 +26,28 @@ type EventSink = (event: LifecycleEvent) => void;
 type RuntimeEventSink = (event: RuntimeEvent) => void;
 
 export type ValueBounds = { maxBytes: number; maxDepth: number; maxNodes: number };
+export type Clock = { now(): Date };
+const systemClock: Clock = { now: () => new Date() };
+/** Immutable per-call timing captured before any policy, audit, or target work. */
+export class ReceiptTiming {
+  readonly startedAt: string;
+  #completedAt: string | undefined;
+  readonly #clock: Clock;
+
+  constructor(clock: Clock) {
+    this.#clock = clock;
+    this.startedAt = clock.now().toISOString();
+  }
+
+  complete(): string {
+    if (this.#completedAt !== undefined) return this.#completedAt;
+    const completedAt = this.#clock.now().toISOString();
+    if (Date.parse(completedAt) < Date.parse(this.startedAt)) throw new Error("Receipt clock moved backwards before finalization");
+    this.#completedAt = completedAt;
+    return completedAt;
+  }
+}
+type AcceptedCall = { callId: string; toolName: string; argsHash: string; policyHash: string; startedAt: string; timing: ReceiptTiming };
 type ToolInputValidator = ValidateFunction<Record<string, unknown>>;
 type ToolInputValidation = { valid: true } | { valid: false; reason: "input_schema_invalid" | "input_schema_unavailable" };
 type AddFormats = (ajv: Ajv2020) => unknown;
@@ -541,16 +563,19 @@ export class ToolBastionProxy {
   readonly #inputValidators = new Map<string, ToolInputValidator>();
   readonly #judge: JudgeProvider;
   readonly #audit: AuditLog;
+  readonly #clock: Clock;
   readonly #recentEvents: string[] = [];
   readonly #receiptCallIds = new Set<string>();
+  readonly #acceptedCalls = new Map<string, AcceptedCall>();
   #tools: Awaited<ReturnType<ToolBastionTargetClient["listTools"]>>["tools"] = [];
   #untrustedTools = new Set<string>();
   #inflightCalls = 0;
   #auditFailed = false;
 
-  constructor(config: ToolBastionConfig, emit: RuntimeEventSink = () => undefined, options: { audit?: AuditLog } = {}) {
+  constructor(config: ToolBastionConfig, emit: RuntimeEventSink = () => undefined, options: { audit?: AuditLog; clock?: Clock } = {}) {
     this.#config = config;
     this.#emit = emit;
+    this.#clock = options.clock ?? systemClock;
     this.#target = new ToolBastionTargetClient(config.target, (event) => this.#emitEvent(event.eventType, event.payload), async () => this.#refreshTools(true), config.limits.tool_timeout_ms, config.project_root);
     this.#judge = createJudgeProvider(config);
     this.#audit = options.audit ?? new AuditLog(
@@ -595,15 +620,15 @@ export class ToolBastionProxy {
     const baselinePath = path.resolve(this.#config.project_root, ".toolbastion", "toolbastion.lock.json");
     let diff: TrustDiff;
     try {
-      diff = diffTrustBaseline(await readTrustBaseline(baselinePath), this.#tools, this.#config.target.name);
+      diff = diffTrustBaseline(await readTrustBaseline(baselinePath), this.#tools, this.#config.capabilities.tools, this.#config.target.name);
     } catch (error) {
-      diff = { added: this.#tools.map((tool) => tool.name), removed: [], schemaChanged: [], descriptionChanged: [], poisoned: [], unchanged: [] };
+      diff = { added: this.#tools.map((tool) => tool.name), removed: [], schemaChanged: [], descriptionChanged: [], capabilityChanged: [], poisoned: [], unchanged: [] };
       this.#emitEvent("trust_verified", { approved: false, error: error instanceof Error ? error.message : "baseline unavailable", diff });
     }
     const oversizedMetadata = this.#tools
       .filter((tool) => findValueBoundsViolation({ description: tool.description ?? "", inputSchema: tool.inputSchema }, { maxBytes: this.#config.limits.max_tool_metadata_bytes, maxDepth: 32, maxNodes: 10_000 }) !== undefined)
       .map((tool) => tool.name);
-    this.#untrustedTools = new Set([...diff.added, ...diff.schemaChanged, ...diff.descriptionChanged, ...diff.poisoned, ...oversizedMetadata]);
+    this.#untrustedTools = new Set([...diff.added, ...diff.schemaChanged, ...diff.descriptionChanged, ...diff.capabilityChanged, ...diff.poisoned, ...oversizedMetadata]);
     this.#emitEvent("trust_verified", { approved: this.#untrustedTools.size === 0, diff, oversizedMetadata });
     this.#cache.clear();
     this.#inputValidators.clear();
@@ -615,22 +640,24 @@ export class ToolBastionProxy {
   }
 
   async #handleCall(toolName: string, args: Record<string, unknown>) {
-    if (this.#config.mode === "enforce" && this.#auditFailed) return this.#preDispatchAuditUnavailable(toolName);
+    const accepted = this.#acceptCall(toolName, args);
+    if (this.#config.mode === "enforce" && this.#auditFailed) return this.#preDispatchAuditUnavailable(toolName, {}, accepted);
     if (this.#inflightCalls >= this.#config.limits.max_inflight_calls) {
-      return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ decision: "BLOCK", reason: "too_many_inflight_calls" }) }] };
+      return this.#blocked(toolName, "too_many_inflight_calls", ["The target call queue is full"], {
+        ...accepted,
+        deterministicEvidence: [{ category: "too_many_inflight_calls", severity: "high" }]
+      });
     }
     this.#inflightCalls += 1;
     try {
-      return await this.#handleCallInner(toolName, args);
+      return await this.#handleCallInner(toolName, args, accepted);
     } finally {
       this.#inflightCalls -= 1;
     }
   }
 
-  async #handleCallInner(toolName: string, args: Record<string, unknown>) {
-    const callId = randomUUID();
-    const argsHash = sha256(args);
-    const policyHash = sha256(this.#config);
+  async #handleCallInner(toolName: string, args: Record<string, unknown>, accepted: AcceptedCall) {
+    const { callId, argsHash, policyHash } = accepted;
     const boundsViolation = findValueBoundsViolation(args, {
       maxBytes: this.#config.limits.max_argument_bytes,
       maxDepth: this.#config.limits.max_argument_depth,
@@ -814,8 +841,30 @@ export class ToolBastionProxy {
     };
   }
 
-  async #writeFinalReceipt(input: { callId: string; toolName: string; argsHash: string; schemaHash: string | undefined; policyHash: string; authorizationDecision: AuthorizationDecision; executionState: ExecutionState; outputDecision: OutputDecision; judge: SafeJudgeVerdict | undefined }): Promise<void> {
-    if (!this.#config.receipts.enabled || this.#receiptCallIds.has(input.callId)) return;
+  #acceptCall(toolName: string, args: Record<string, unknown>): AcceptedCall {
+    const accepted: AcceptedCall = {
+      callId: randomUUID(),
+      toolName,
+      argsHash: sha256(args),
+      policyHash: sha256(this.#config),
+      timing: new ReceiptTiming(this.#clock),
+      startedAt: ""
+    };
+    accepted.startedAt = accepted.timing.startedAt;
+    this.#acceptedCalls.set(accepted.callId, accepted);
+    return accepted;
+  }
+
+  async #writeFinalReceipt(input: { callId: string; toolName: string; argsHash?: string; schemaHash?: string; policyHash?: string; authorizationDecision: AuthorizationDecision; executionState: ExecutionState; outputDecision: OutputDecision; judge: SafeJudgeVerdict | undefined }): Promise<void> {
+    if (this.#receiptCallIds.has(input.callId)) return;
+    if (!this.#config.receipts.enabled) {
+      this.#receiptCallIds.add(input.callId);
+      this.#acceptedCalls.delete(input.callId);
+      return;
+    }
+    const accepted = this.#acceptedCalls.get(input.callId);
+    if (!accepted) throw new Error("Receipt finalization was attempted for a call that was not accepted");
+    this.#receiptCallIds.add(input.callId);
     const unsigned = {
       version: 1 as const,
       sessionId: this.#audit.sessionId,
@@ -823,27 +872,28 @@ export class ToolBastionProxy {
       toolName: input.toolName,
       toolManifestHash: sha256(this.#tools.map((tool) => ({ name: tool.name, description: tool.description ?? "", inputSchema: tool.inputSchema }))),
       schemaHash: input.schemaHash ?? sha256({}),
-      policyHash: input.policyHash,
-      argsHash: input.argsHash,
+      policyHash: input.policyHash ?? accepted.policyHash,
+      argsHash: input.argsHash ?? accepted.argsHash,
       authorizationDecision: input.authorizationDecision,
       executionState: input.executionState,
       outputDecision: input.outputDecision,
       ...(input.judge === undefined ? {} : { judge: { requestedModel: this.#config.judge.model, responseModel: input.judge.model, offlineReplay: input.judge.offlineReplay, subchecks: input.judge.subchecks, inputTokens: input.judge.inputTokens ?? 0, outputTokens: input.judge.outputTokens ?? 0, latencyMs: input.judge.latencyMs } }),
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString()
+      startedAt: accepted.startedAt,
+      completedAt: accepted.timing.complete()
     };
     const receipt = process.env.TOOLBASTION_RECEIPT_PRIVATE_KEY
       ? signReceipt(unsigned)
       : bastionReceiptSchema.parse({ ...unsigned, signatureStatus: "unsigned" });
     await writeReceiptFile(this.#config.project_root, this.#config.receipts.directory, receipt);
-    this.#receiptCallIds.add(input.callId);
+    this.#acceptedCalls.delete(input.callId);
   }
 
-  #preDispatchAuditUnavailable(toolName: string, lifecycle: Record<string, unknown> = {}) {
+  async #preDispatchAuditUnavailable(toolName: string, lifecycle: Record<string, unknown> = {}, accepted?: AcceptedCall) {
     const authorizationDecision = lifecycle.authorizationDecision === "ALLOW" || lifecycle.authorizationDecision === "ASK_USER" || lifecycle.authorizationDecision === "BLOCK_BEFORE_EXECUTION"
       ? lifecycle.authorizationDecision
       : "BLOCK_BEFORE_EXECUTION";
     const response = {
+      ...(accepted === undefined ? {} : { callId: accepted.callId, argsHash: accepted.argsHash, policyHash: accepted.policyHash }),
       ...lifecycle,
       toolName,
       authorizationDecision,
@@ -853,10 +903,21 @@ export class ToolBastionProxy {
       reason: "audit_unavailable_before_execution"
     };
     this.#emitEvent("audit_failed", response);
+    const callId = typeof response.callId === "string" ? response.callId : undefined;
+    if (callId !== undefined) {
+      await this.#writeFinalReceipt({
+        callId,
+        toolName,
+        authorizationDecision,
+        executionState: "NOT_DISPATCHED",
+        outputDecision: "NOT_INSPECTED",
+        judge: undefined
+      });
+    }
     return { isError: true, content: [{ type: "text" as const, text: JSON.stringify(response) }] };
   }
 
-  #postDispatchUnavailable(toolName: string, lifecycle: Record<string, unknown>) {
+  async #postDispatchUnavailable(toolName: string, lifecycle: Record<string, unknown>) {
     const authorizationDecision = lifecycle.authorizationDecision === "ALLOW" || lifecycle.authorizationDecision === "ASK_USER" || lifecycle.authorizationDecision === "BLOCK_BEFORE_EXECUTION"
       ? lifecycle.authorizationDecision
       : "ALLOW";
@@ -873,6 +934,17 @@ export class ToolBastionProxy {
       reason: "audit_unavailable_after_execution"
     };
     this.#emitEvent("call_completed", response);
+    const callId = typeof lifecycle.callId === "string" ? lifecycle.callId : undefined;
+    if (callId !== undefined) {
+      await this.#writeFinalReceipt({
+        callId,
+        toolName,
+        authorizationDecision,
+        executionState,
+        outputDecision: "NOT_RELEASED",
+        judge: undefined
+      });
+    }
     return { isError: true, content: [{ type: "text" as const, text: JSON.stringify(response) }] };
   }
 
@@ -909,13 +981,13 @@ export class ToolBastionProxy {
     if (!await this.#appendAudit("call_blocked", { ...lifecycle, toolName, reason, evidence, eventId, ...context }) && this.#config.mode === "enforce") {
       return this.#preDispatchAuditUnavailable(toolName, lifecycle);
     }
-    if (context !== undefined && context.argsHash !== undefined && context.policyHash !== undefined) {
+    if (context !== undefined) {
       await this.#writeFinalReceipt({
         callId: context.callId,
         toolName,
-        argsHash: context.argsHash,
-        schemaHash: context.schemaHash,
-        policyHash: context.policyHash,
+        ...(context.argsHash === undefined ? {} : { argsHash: context.argsHash }),
+        ...(context.schemaHash === undefined ? {} : { schemaHash: context.schemaHash }),
+        ...(context.policyHash === undefined ? {} : { policyHash: context.policyHash }),
         authorizationDecision: reason === "operator_approval_required" ? "ASK_USER" : "BLOCK_BEFORE_EXECUTION",
         executionState: "NOT_DISPATCHED",
         outputDecision: "NOT_INSPECTED",

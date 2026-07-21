@@ -77,7 +77,8 @@ export const semanticEnvelopeSchema = z.object({
     allowedDomainCount: z.number().int().nonnegative(), allowedPortCount: z.number().int().nonnegative(), targetEgress: z.string().max(20),
     toolAction: z.string().max(32), toolBaseRisk: z.string().max(20)
   }).strict(),
-  context: z.object({ available: z.boolean(), intentCategory: z.enum(["filesystem_read", "filesystem_write", "command_execution", "network_request", "code_operation", "unknown"]), redacted: z.literal(true) }).strict(),
+  // This is the local tool-category classifier, not a claim about user intent.
+  context: z.object({ available: z.boolean(), category: z.enum(["filesystem_read", "filesystem_write", "command_execution", "network_request", "code_operation", "unknown"]), redacted: z.literal(true) }).strict(),
   toolMetadataIntegrity: z.enum(["verified", "untrusted", "unavailable"]),
   targetEgress: z.enum(["blocked", "isolated", "unknown"]),
   baseRisk: riskLevelSchema,
@@ -252,9 +253,8 @@ function toolCategory(toolName: string): SemanticEnvelope["toolCategory"] {
 }
 
 function classifyCommand(value: string): SemanticEnvelope["arguments"][number] {
-  const executable = value.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "unknown";
   const operation = /\b(?:npm|pnpm|yarn)\s+(?:test|run test)\b/i.test(value) ? "test" : /\b(?:npm|pnpm|yarn)\s+(?:run )?(?:lint|typecheck)\b/i.test(value) ? "lint" : /\b(?:npm|pnpm|yarn)\s+(?:install|add)\b/i.test(value) ? "install" : /\b(?:rm|rmdir|del|remove-item)\b/i.test(value) ? "delete" : /\b(?:curl|wget|invoke-webrequest|iwr|irm)\b/i.test(value) ? "network_request" : "command";
-  return { semanticType: "command", operation, classification: `executable:${executable.slice(0, 48)}`, containsNetworkAccess: /\b(?:curl|wget|invoke-webrequest|iwr|irm|nc|ncat|telnet)\b/i.test(value), containsRedirection: /(?:[|;&]|&&|\|\||(?:^|\s)[<>]{1,2})/.test(value), containsDestructiveAction: operation === "delete" };
+  return { semanticType: "command", operation, classification: "command_present", containsNetworkAccess: /\b(?:curl|wget|invoke-webrequest|iwr|irm|nc|ncat|telnet)\b/i.test(value), containsRedirection: /(?:[|;&]|&&|\|\||(?:^|\s)[<>]{1,2})/.test(value), containsDestructiveAction: operation === "delete" };
 }
 
 function classifyString(key: string, value: string): SemanticEnvelope["arguments"][number] {
@@ -311,7 +311,7 @@ export function buildSemanticEnvelope(request: JudgeRequest): SemanticEnvelope {
     argumentProfile: profileArguments(request.args),
     schema: schemaProfile(request.schemaSummary),
     policy,
-    context: { available: request.contextSummary !== undefined, intentCategory: request.contextSummary === undefined ? "unknown" : category, redacted: true },
+    context: { available: request.contextSummary !== undefined, category: request.contextSummary === undefined ? "unknown" : category, redacted: true },
     toolMetadataIntegrity: request.toolMetadataIntegrity ?? "unavailable",
     targetEgress: request.targetEgress ?? (policy.targetEgress === "blocked" || policy.targetEgress === "isolated" ? policy.targetEgress : "unknown"),
     baseRisk: request.baseRisk,

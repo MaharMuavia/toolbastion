@@ -242,6 +242,7 @@ function assertNoBroadWeakening(current: ToolBastionConfig, proposed: ToolBastio
   if (current.mode !== proposed.mode) throw new Error("Policy patch cannot change runtime mode");
   assertUnchanged("project root", current.project_root, proposed.project_root);
   assertUnchanged("target configuration", current.target, proposed.target);
+  assertUnchanged("capability contracts", current.capabilities, proposed.capabilities);
   assertUnchanged("path policy", current.paths, proposed.paths);
   assertUnchanged("tool authorization", current.tools, proposed.tools);
   assertUnchanged("judge configuration", current.judge, proposed.judge);
@@ -292,8 +293,8 @@ export async function verifyRemediation(options: { output: RemediationOutput; po
 
     const derivedOperation = deriveExactRequestOperation(options.request.args);
     operation = derivedOperation;
-    if (current.mode === "enforce" && current.network.target_egress !== "isolated") {
-      throw new Error("Enforce mode cannot create a target egress exception unless the target has no network namespace");
+    if (current.mode === "enforce") {
+      throw new Error("Enforce mode cannot create a target egress exception because an authenticated allowlisted egress proxy is not implemented");
     }
     if (current.network.allow_domains.some((domain) => domain.toLowerCase() === derivedOperation.domain)) {
       throw new Error("The locally derived request host is already allowed; no remediation patch is valid");

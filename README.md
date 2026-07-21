@@ -22,7 +22,7 @@
 
 ![ToolBastion security console showing blocked MCP attacks](docs/screenshots/dashboard-overview.png)
 
-ToolBastion is a local execution firewall and evidence layer for one stdio MCP server used by coding agents. It is an MCP server to the coding agent and an MCP client to one local stdio target. It verifies tool metadata and advertised input contracts, applies deterministic policy before execution, sends only genuinely ambiguous calls to three structured GPT-5.6 checks, inspects returned content, and writes a redacted tamper-evident audit trail. In `enforce` and `interactive` modes, clear violations, unknown tools, invalid tool arguments, and unapproved metadata are blocked before the target tool body runs; `shadow` records the same decisions while forwarding for evaluation.
+ToolBastion is a security gateway and evidence layer for mediated MCP calls, with optional target-process containment. It is an MCP server to the coding agent and an MCP client to one local stdio target. It verifies tool metadata, approved per-tool capability contracts, and advertised input contracts; applies deterministic policy before execution; sends only genuinely ambiguous calls to three structured GPT-5.6 checks; inspects returned content; and writes a redacted tamper-evident audit trail. In `enforce` and `interactive` modes, clear violations, unknown tools, invalid tool arguments, unapproved metadata, and missing or unsupported capability contracts are blocked before the target tool body runs; `shadow` is an explicitly labelled evaluation mode that records the same decisions while forwarding.
 
 ## Limitations
 
@@ -137,7 +137,7 @@ Interactive mode returns an explicit `ASK_USER` result for ambiguous calls and n
 - Tool-list change notifications trigger baseline revalidation and exact-call cache invalidation.
 - Deterministic detectors use both field semantics and hostile content signatures, covering traversal/symlink escape, secret paths, shell metacharacters, destructive commands, SSRF/private endpoints, suspicious protocols, and misleading generic argument fields.
 - Target subprocesses inherit only the MCP SDK safe baseline plus explicitly named `env_allowlist` entries, have a bounded MCP request deadline, and have stderr drained without persistence.
-- In enforce mode, recognized network-, shell-, and command-capable target calls are blocked by default. The only opt-in is `network.target_egress: isolated`, which requires ToolBastion to launch the target in a pinned Docker image with no network namespace; it does not accept an unverified external-egress assertion.
+- In enforce mode, every tool needs a reviewed capability contract. Declared network-denied, command, subprocess, or destructive capabilities require ToolBastion to launch the target in a pinned Docker image with no network namespace. `network: allowlist` fails closed until a real authenticated egress proxy is implemented; no topology setting grants that capability.
 - Hard denies cannot be overridden by GPT-5.6.
 - Enforce mode requires output inspection, credential redaction, prompt-injection quarantine, and untrusted-URL quarantine; payload depth, nodes, and bytes are bounded.
 - Enforce mode fails closed if required policy, trust, audit, or semantic judgment is unavailable.
@@ -153,7 +153,7 @@ GPT-5.6 is not a general controller. After deterministic checks, an ambiguous ca
 
 TypeScript validates each result with Zod and aggregates it deterministically. Model output cannot weaken policy or override a hard deny. Timeouts, malformed output, unavailable credentials, and call-limit exhaustion are safe failures. The recorded replay is clearly labeled, performs no network call, and is rejected in enforce mode. Live mode is optional:
 
-An optional `judge.context_file` may provide bounded local intent (8 KiB by default). ToolBastion rejects paths outside `project_root` and keeps context text, raw arguments, raw commands/paths/URLs, policy YAML, credentials, and recent event contents local. Each live request carries only an allowlisted envelope: normalized tool category and operation; schema field names, JSON types, and required-field presence; a structural argument profile; path/destination/command-capability classifications; metadata-integrity state; deterministic reason codes; policy counts and enums; target-egress mode; base risk; runtime mode; and a context-available flag with a locally derived intent category or `unknown`. It includes the locally redacted context hash in the exact-call cache key.
+An optional `judge.context_file` may provide bounded local context (8 KiB by default). ToolBastion rejects paths outside `project_root` and keeps context text, raw arguments, raw commands/paths/URLs, policy YAML, credentials, and recent event contents local. Each live request carries only an allowlisted envelope: normalized tool category and operation; schema field names, JSON types, and required-field presence; a structural argument profile; path/destination/command-capability classifications; metadata-integrity state; deterministic reason codes; policy counts and enums; target-egress mode; base risk; runtime mode; and a context-available flag with a locally derived tool category or `unknown`. This category is not a claim about user intent. It includes the locally redacted context hash in the exact-call cache key.
 
 ```powershell
 node --env-file=.env.local .\scripts\judge-smoke.mjs --record
@@ -174,7 +174,7 @@ The full record is in [Codex collaboration](docs/codex-collaboration.md), [human
 ```text
 toolbastion doctor --config <file>
 toolbastion policy validate --config <file>
-toolbastion trust create|inspect|diff|approve --config <file>
+toolbastion trust create|inspect|diff|approve|migrate --config <file>
 toolbastion run --config <file>
 toolbastion dashboard --config <file>
 toolbastion audit verify <session-id> --config <file>
@@ -188,6 +188,12 @@ toolbastion demo [--cleanup]
 Set `TOOLBASTION_REMEDIATION_HMAC_KEY` to a unique secret of at least 32 bytes before using any remediation command. Keep it outside the repository and do not pass it to the target or Codex subprocess.
 
 The proxy speaks MCP JSON-RPC on stdout. Human diagnostics and lifecycle events use stderr only.
+
+Trust baselines created by current versions are v2 and include the reviewed `capabilities.tools` contract for every target tool. An existing v1 baseline safely fails closed until the operator reviews the current contracts and runs:
+
+```powershell
+node .\apps\cli\dist\index.js trust migrate --yes --config .\toolbastion.config.yaml
+```
 
 ## Live enforce setup
 
@@ -274,7 +280,7 @@ The corpus covers path traversal, symlink escape, secret-file access, shell inje
 
 - v1 protects exactly one local stdio target per ToolBastion process; remote MCP transports are out of scope.
 - ToolBastion is not an operating-system sandbox. A malicious target can act at startup or outside a mediated tool call.
-- ToolBastion validates URL, host, address, IP, port, loopback, private, link-local, metadata, and IPv4-mapped IPv6 inputs before forwarding, but it is not a general network firewall. Enforce mode blocks recognized network/shell target behavior by default; `target_egress: isolated` is a Docker `--network=none` profile, not a routing proxy for permitted egress.
+- ToolBastion validates URL, host, address, IP, port, loopback, private, link-local, metadata, and IPv4-mapped IPv6 inputs before forwarding, but it is not a general network firewall. Capability contracts, not detector names or argument strings, authorize a tool's potential network, command, subprocess, filesystem, and destructive behavior. Docker `--network=none` is containment, not a routing proxy for permitted egress.
 - Audit hashes do not prevent replacement of an entire chain and its unanchored trust source; unsalted argument hashes are correlation identifiers, not protection for low-entropy secrets.
 - Offline fixture metrics measure implemented decisions, not production prevalence or live GPT-5.6 quality.
 - macOS and ARM are not release-certified yet.

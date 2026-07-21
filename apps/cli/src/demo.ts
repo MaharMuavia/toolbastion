@@ -161,7 +161,21 @@ export async function runProfessionalDemo(workspace: string, options: { cleanup:
       await directTarget.close().catch(() => undefined);
     }
     if (tools.length === 0) throw new Error("Direct vulnerable target did not expose tools");
-    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools));
+    const capabilities = {
+      read_project_file: { filesystem: "read" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      run_project_command: { filesystem: "none" as const, network: "deny" as const, command_exec: true, subprocess: true, destructive: false },
+      fetch_url: { filesystem: "none" as const, network: "deny" as const, command_exec: false, subprocess: false, destructive: false },
+      get_execution_count: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      get_canary_delivery_count: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      innocent_status: { filesystem: "none" as const, network: "deny" as const, command_exec: false, subprocess: false, destructive: false },
+      get_deceptive_network_execution_count: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      emit_output: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      get_process_id: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      emit_tool_list_change: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      slow_tool: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+      slow_child_tree: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: true, destructive: false }
+    };
+    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities));
 
     const config = toolbastionConfigSchema.parse({
       version: 1,
@@ -176,6 +190,7 @@ export async function runProfessionalDemo(workspace: string, options: { cleanup:
         get_canary_delivery_count: { base_risk: "low", action: "allow" },
         emit_output: { base_risk: "low", action: "allow" }
       } },
+      capabilities: { tools: capabilities },
       judge: { enabled: false, mode: "offline" },
       remediation: { enabled: false, auto_apply: false }
     });

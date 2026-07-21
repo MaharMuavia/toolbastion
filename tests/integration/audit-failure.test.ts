@@ -6,6 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { afterEach, describe, expect, it } from "vitest";
 import { ToolBastionTargetClient } from "@toolbastion/core";
 import { createTrustBaseline, writeTrustBaseline } from "@toolbastion/policy";
+import type { CapabilityContract } from "@toolbastion/shared";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 let transport: StdioClientTransport | undefined;
@@ -33,6 +34,11 @@ function responseText(result: unknown): string {
   const first = content[0];
   if (!isRecord(first) || typeof first["text"] !== "string") throw new Error("Expected a text MCP response");
   return first["text"];
+}
+
+const noCapability: CapabilityContract = { filesystem: "none", network: "none", command_exec: false, subprocess: false, destructive: false };
+function capabilitiesFor(tools: Array<{ name: string }>, overrides: Record<string, CapabilityContract> = {}): Record<string, CapabilityContract> {
+  return Object.fromEntries(tools.map((tool) => [tool.name, overrides[tool.name] ?? noCapability]));
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -80,20 +86,23 @@ describe("audit persistence failure", () => {
     const discovery = new ToolBastionTargetClient(target);
     await discovery.connect();
     try {
-      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, (await discovery.listTools()).tools));
+      const tools = (await discovery.listTools()).tools;
+      const capabilities = capabilitiesFor(tools, { echo: { ...noCapability } });
+      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities));
+      await writeFile(configPath, JSON.stringify({
+        version: 1,
+        mode: "enforce",
+        project_root: projectRoot,
+        target: { name: target.name, command: target.command, args: target.args, cwd: target.cwd, env_allowlist: [] },
+        paths: { allow: ["./**"], deny: ["**/.env", "**/.ssh/**", "**/.aws/**"] },
+        network: { default: "deny", allow_domains: ["api.github.com"] },
+        judge: { enabled: false, mode: "offline" },
+        tools: { default: "judge", rules: { echo: { base_risk: "low", action: "allow" } } },
+        capabilities: { tools: capabilities }
+      }), "utf8");
     } finally {
       await discovery.close();
     }
-    await writeFile(configPath, JSON.stringify({
-      version: 1,
-      mode: "enforce",
-      project_root: projectRoot,
-      target: { name: target.name, command: target.command, args: target.args, cwd: target.cwd, env_allowlist: [] },
-      paths: { allow: ["./**"], deny: ["**/.env", "**/.ssh/**", "**/.aws/**"] },
-      network: { default: "deny", allow_domains: ["api.github.com"] },
-      judge: { enabled: false, mode: "offline" },
-      tools: { default: "judge", rules: { echo: { base_risk: "low", action: "allow" } } }
-    }), "utf8");
     transport = new StdioClientTransport({
       command: process.execPath,
       args: ["--input-type=module", "--eval", proxyRunner],
@@ -143,20 +152,23 @@ describe("audit persistence failure", () => {
     const discovery = new ToolBastionTargetClient(target);
     await discovery.connect();
     try {
-      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, (await discovery.listTools()).tools));
+      const tools = (await discovery.listTools()).tools;
+      const capabilities = capabilitiesFor(tools, { read_project_file: { ...noCapability, filesystem: "read" } });
+      await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, capabilities));
+      await writeFile(configPath, JSON.stringify({
+        version: 1,
+        mode: "enforce",
+        project_root: projectRoot,
+        target: { name: target.name, command: target.command, args: target.args, cwd: target.cwd, env_allowlist: [] },
+        paths: { allow: ["./src/**"], deny: ["**/.env", "**/.ssh/**", "**/.aws/**"] },
+        network: { default: "deny", allow_domains: ["api.github.com"] },
+        judge: { enabled: false, mode: "offline" },
+        tools: { default: "judge", rules: { read_project_file: { base_risk: "low", action: "allow_when_in_scope" } } },
+        capabilities: { tools: capabilities }
+      }), "utf8");
     } finally {
       await discovery.close();
     }
-    await writeFile(configPath, JSON.stringify({
-      version: 1,
-      mode: "enforce",
-      project_root: projectRoot,
-      target: { name: target.name, command: target.command, args: target.args, cwd: target.cwd, env_allowlist: [] },
-      paths: { allow: ["./src/**"], deny: ["**/.env", "**/.ssh/**", "**/.aws/**"] },
-      network: { default: "deny", allow_domains: ["api.github.com"] },
-      judge: { enabled: false, mode: "offline" },
-      tools: { default: "judge", rules: { read_project_file: { base_risk: "low", action: "allow_when_in_scope" } } }
-    }), "utf8");
     transport = new StdioClientTransport({
       command: process.execPath,
       args: ["--input-type=module", "--eval", proxyRunner],

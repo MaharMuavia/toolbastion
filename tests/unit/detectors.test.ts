@@ -136,16 +136,17 @@ describe("schema-independent argument inspection", () => {
     expect(result.reasonCodes).toContain("loopback_destination");
   });
 
-  it("fails closed for target egress in enforce mode unless Docker network isolation is configured", async () => {
+  it("requires declared network capability to use Docker no-network containment", async () => {
     const { envAllowlist, ...target } = config.target;
     const directConfig = toolbastionConfigSchema.parse({
       ...config,
       target: { ...target, env_allowlist: envAllowlist },
-      tools: { default: "allow", rules: {} }
+      tools: { default: "allow", rules: {} },
+      capabilities: { tools: { fetch_url: { filesystem: "none", network: "deny", command_exec: false, subprocess: false, destructive: false } } }
     });
     const blocked = await evaluateDeterministic("fetch_url", { url: "https://api.github.com/repos" }, directConfig);
     expect(blocked.resolution).toBe("HARD_DENY");
-    expect(blocked.reasonCodes).toContain("target_egress_not_isolated");
+    expect(blocked.reasonCodes).toContain("capability_containment_required");
 
     const guardedConfig = toolbastionConfigSchema.parse({
       ...directConfig,

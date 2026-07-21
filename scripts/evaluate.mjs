@@ -30,6 +30,13 @@ const config = toolbastionConfigSchema.parse({
     fetch_url: { base_risk: "medium", action: "allow_when_in_scope" },
     get_execution_count: { base_risk: "low", action: "allow" }
   } },
+  capabilities: { tools: {
+    generic_action: { filesystem: "none", network: "none", command_exec: false, subprocess: false, destructive: false },
+    read_project_file: { filesystem: "read", network: "none", command_exec: false, subprocess: false, destructive: false },
+    fetch_url: { filesystem: "none", network: "deny", command_exec: false, subprocess: false, destructive: false },
+    run_project_command: { filesystem: "none", network: "deny", command_exec: true, subprocess: true, destructive: false },
+    get_execution_count: { filesystem: "none", network: "none", command_exec: false, subprocess: false, destructive: false }
+  } },
   judge: { enabled: true, mode: "offline" }
 });
 
@@ -106,7 +113,7 @@ for (const fixture of fixtures) {
       evidence = aggregate.reasonCodes;
       escalated += 1;
     } else if (fixture.kind === "policy_tamper") {
-      const baseline = createTrustBaseline("evaluation", [{ name: "read", description: "safe", inputSchema: {} }]);
+      const baseline = createTrustBaseline("evaluation", [{ name: "read", description: "safe", inputSchema: {} }], { read: { filesystem: "read", network: "none", command_exec: false, subprocess: false, destructive: false } });
       try { verifyTrustBaseline({ ...baseline, tools: [] }); requestDecision = "ALLOW"; }
       catch { requestDecision = "BLOCK"; evidence = ["invalid_baseline_hash"]; }
       deterministic += 1;
@@ -121,12 +128,25 @@ for (const fixture of fixtures) {
   const required = fixture.requiredEvidence.every((value) => evidence.includes(value));
   const expectedOutputDecision = fixture.kind === "output" ? (fixture.expectedOutputDecision ?? null) : null;
   const passed = requestDecision === (fixture.expectedRequestDecision ?? null) && outputDecision === expectedOutputDecision && required;
-  results.push({ id: fixture.id, title: fixture.title, category: fixture.category, attack: fixture.attack, passed, requestDecision, outputDecision, evidence });
+  results.push({ id: fixture.id, title: fixture.title, category: fixture.category, attack: fixture.attack, passed, expectedRequestDecision: fixture.expectedRequestDecision ?? null, expectedOutputDecision, requestDecision, outputDecision, evidence });
 }
 
 const attacks = results.filter((item) => item.attack);
 const benignResults = results.filter((item) => !item.attack);
 const passed = results.filter((item) => item.passed).length;
+const coverageByCategory = Object.values(results.reduce((categories, item) => {
+  const category = item.category || "uncategorized";
+  const entry = categories[category] ?? { category, attacks: 0, benign: 0, expected: {}, actual: {}, passed: 0, failed: 0, unsupported: 0 };
+  if (item.attack) entry.attacks += 1; else entry.benign += 1;
+  const expected = item.expectedOutputDecision === null ? item.expectedRequestDecision : item.expectedOutputDecision;
+  const actual = item.outputDecision === null ? item.requestDecision : item.outputDecision;
+  entry.expected[String(expected)] = (entry.expected[String(expected)] ?? 0) + 1;
+  entry.actual[String(actual)] = (entry.actual[String(actual)] ?? 0) + 1;
+  if (item.passed) entry.passed += 1; else entry.failed += 1;
+  if (item.evidence.some((value) => value.includes("unsupported") || value.includes("unavailable"))) entry.unsupported += 1;
+  categories[category] = entry;
+  return categories;
+}, {}));
 const summary = {
   mode: "offline-fixture-evaluation",
   seed: seedValue,
@@ -139,6 +159,7 @@ const summary = {
   gptEscalationRate: escalated / results.length,
   cacheHitRate: 0,
   outputRedactionAccuracy: outputCases === 0 ? 0 : correctOutputCases / outputCases,
+  coverageByCategory,
   limitations: ["Trust metadata cases use deterministic baseline assertions rather than launching a mutable target.", "Cache hit rate is zero because the corpus intentionally evaluates unique calls.", "GPT failure fixtures exercise deterministic failure aggregation without network access.", "Seeded adversarial cases are deterministic detector regressions, not a prevalence or live-model-accuracy measurement."],
   results
 };

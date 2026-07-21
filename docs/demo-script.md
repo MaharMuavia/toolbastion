@@ -30,7 +30,7 @@ Say: "This traversal is blocked before target execution. The loopback delivery i
 
 Show the poisoned-metadata or schema-change card and trust event.
 
-Say: “ToolBastion persists approved tool schemas and descriptions. A changed or instruction-poisoned tool is quarantined until an explicit trust decision.”
+Say: “ToolBastion persists approved schemas, descriptions, and per-tool capability contracts. A changed or instruction-poisoned tool is quarantined until an explicit trust decision.”
 
 ## 1:45–2:05 — Malicious output
 
@@ -50,7 +50,7 @@ Say: “Only ambiguous calls use GPT-5.6. Scope, exfiltration and tool-integrity
 
 Show a schema-validated `NO_CHANGE` or proposal record and the explicit apply command requiring `--yes`.
 
-Say: “Codex receives only a safe metadata summary in an empty read-only workspace. Local code derives and verifies the one permitted host exception; ToolBastion never auto-applies policy.”
+Say: “Codex receives only a safe metadata summary in an empty read-only workspace. ToolBastion never auto-applies policy; allowlisted target egress remains blocked until a real authenticated proxy exists.”
 
 ## 2:40–2:50 — Close
 

@@ -7,12 +7,16 @@ const docker = spawnSync("docker", ["build", "-q", "-f", "examples/vulnerable-se
   cwd: root,
   encoding: "utf8",
   shell: false,
-  stdio: ["ignore", "pipe", "inherit"],
+  stdio: ["ignore", "pipe", "pipe"],
   windowsHide: true
 });
 
 if (docker.error !== undefined) throw new Error(`Docker build could not start: ${docker.error.message}`);
-if (docker.status !== 0) process.exit(docker.status ?? 1);
+const dockerDiagnostics = docker.stderr.trim();
+if (docker.status !== 0 || /(?:^|\n)(?:error:|warning: .*access is denied)|access is denied/i.test(dockerDiagnostics)) {
+  if (dockerDiagnostics.length > 0) process.stderr.write(`${dockerDiagnostics}\n`);
+  process.exit(docker.status === 0 ? 1 : docker.status ?? 1);
+}
 
 const image = docker.stdout.trim();
 if (image.length === 0) throw new Error("Docker build did not return an image ID");

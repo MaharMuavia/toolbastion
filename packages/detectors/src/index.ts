@@ -68,11 +68,6 @@ function isNetworkToolName(toolName: string): boolean {
   return segments.some((segment) => ["fetch", "download", "upload", "http", "url", "webhook", "request", "browse", "connect", "socket", "network"].includes(segment));
 }
 
-function isCommandToolName(toolName: string): boolean {
-  const segments = toolName.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().split(/[^a-z0-9]+/);
-  return segments.some((segment) => ["command", "shell", "exec", "terminal", "script"].includes(segment));
-}
-
 function hasShellSemantics(toolName: string, located: LocatedString): boolean {
   const key = located.key.toLowerCase();
   const value = located.value.trim();
@@ -273,7 +268,6 @@ export function inspectShell(value: string, fieldPath: string): DetectionEvidenc
 
 export async function inspectArguments(toolName: string, args: Record<string, unknown>, config: ToolBastionConfig): Promise<DetectionEvidence[]> {
   const findings: DetectionEvidence[] = [];
-  let requiresTargetEgressGuard = isNetworkToolName(toolName) || isCommandToolName(toolName);
   for (const located of stringsIn(args)) {
     if (hasPathSemantics(located)) findings.push(...await inspectPath(located.value, located.fieldPath, config));
     const networkDestination = hasUrlSemantics(located)
@@ -283,12 +277,7 @@ export async function inspectArguments(toolName: string, args: Record<string, un
     if (hasShellSemantics(toolName, located)) {
       findings.push(...inspectShell(located.value, located.fieldPath));
       for (const uri of absoluteUrisIn(located.value)) findings.push(...inspectUrl(uri, located.fieldPath, config));
-      requiresTargetEgressGuard = true;
     }
-    if (networkDestination) requiresTargetEgressGuard = true;
-  }
-  if (config.mode === "enforce" && config.network.target_egress === "blocked" && requiresTargetEgressGuard) {
-    findings.push(evidence("network", "target_egress_not_isolated", "critical", "Enforce mode blocks target-initiated network or shell execution without Docker no-network isolation", "tool"));
   }
   return findings.filter((finding, index, all) => all.findIndex((candidate) => candidate.category === finding.category && candidate.fieldPath === finding.fieldPath) === index);
 }

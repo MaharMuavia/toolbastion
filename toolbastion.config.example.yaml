@@ -43,7 +43,8 @@ network:
   deny_link_local: true
   deny_metadata_endpoints: true
   allowed_ports: [80, 443]
-  # Use isolated only with the Docker target profile; it gives the target no network namespace.
+  # Legacy topology setting only; it never grants egress authority. Capability
+  # contracts below control authorization, and Docker provides no-network containment.
   target_egress: blocked
 tools:
   default: judge
@@ -51,6 +52,17 @@ tools:
     echo:
       base_risk: low
       action: allow
+capabilities:
+  # Every listed target tool needs one reviewed contract before it can execute
+  # in enforce mode. Docker containment is required for network-denied,
+  # command, subprocess, or destructive capabilities.
+  tools:
+    echo:
+      filesystem: none
+      network: none
+      command_exec: false
+      subprocess: false
+      destructive: false
 remediation:
   enabled: false
   auto_apply: false

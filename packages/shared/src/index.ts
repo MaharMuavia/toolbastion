@@ -19,6 +19,20 @@ export const riskLevelSchema = z.enum(["none", "low", "medium", "high", "critica
 export type RiskLevel = z.infer<typeof riskLevelSchema>;
 
 /**
+ * Operator-approved authority for one target tool. This is deliberately a
+ * contract, not detector output: detectors may supply evidence for a block,
+ * but they can never grant one of these capabilities.
+ */
+export const capabilityContractSchema = z.object({
+  filesystem: z.enum(["none", "read", "write"]),
+  network: z.enum(["none", "deny", "allowlist"]),
+  command_exec: z.boolean(),
+  subprocess: z.boolean(),
+  destructive: z.boolean()
+}).strict();
+export type CapabilityContract = z.infer<typeof capabilityContractSchema>;
+
+/**
  * The dashboard/runtime boundary is deliberately narrower than the audit
  * boundary.  It contains only displayable lifecycle metadata: never tool
  * arguments, policy text, target output, model reasoning, or credentials.
@@ -238,6 +252,9 @@ export const bastionReceiptSchema = z.object({
 }).strict().superRefine((receipt, context) => {
   if (receipt.signatureStatus === "signed" && receipt.signature === undefined) context.addIssue({ code: "custom", path: ["signature"], message: "signed receipts require a signature" });
   if (receipt.signatureStatus === "unsigned" && receipt.signature !== undefined) context.addIssue({ code: "custom", path: ["signature"], message: "unsigned receipts cannot contain a signature" });
+  if (receipt.completedAt !== undefined && Date.parse(receipt.completedAt) < Date.parse(receipt.startedAt)) {
+    context.addIssue({ code: "custom", path: ["completedAt"], message: "receipt completion time cannot precede start time" });
+  }
 });
 export type BastionReceipt = z.infer<typeof bastionReceiptSchema>;
 
@@ -373,6 +390,10 @@ const toolRuleSchema = z.object({
   action: z.enum(["allow", "allow_when_in_scope", "judge", "block"]).default("judge")
 }).strict();
 
+const capabilityDeclarationsSchema = z.object({
+  tools: z.record(z.string().min(1), capabilityContractSchema).default({})
+}).strict().prefault({});
+
 const judgeSchema = z.object({
   enabled: z.boolean().default(true),
   mode: z.enum(["live", "offline"]).default("live"),
@@ -432,6 +453,7 @@ export const toolbastionConfigSchema = z.object({
     default: z.enum(["allow", "judge", "block"]).default("judge"),
     rules: z.record(z.string(), toolRuleSchema).default({})
   }).strict().prefault({}),
+  capabilities: capabilityDeclarationsSchema,
   judge: judgeSchema,
   cache: z.object({
     enabled: z.boolean().default(true),

@@ -166,7 +166,7 @@ describe("dashboard API", () => {
     const projectRoot = path.join(directory, "project");
     const configPath = path.join(directory, "toolbastion.config.json");
     await mkdir(projectRoot, { recursive: true });
-    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline("configured-target", []));
+    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline("configured-target", [], {}));
     await writeFile(configPath, JSON.stringify({
       version: 1,
       mode: "shadow",

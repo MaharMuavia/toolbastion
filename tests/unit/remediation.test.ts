@@ -12,7 +12,8 @@ const current = toolbastionConfigSchema.parse({
   target: { name: "fixture", command: "node", isolation: { provider: "docker", image: `registry.example/toolbastion-target@sha256:${"c".repeat(64)}` } },
   paths: { allow: ["./**"], deny: ["**/.env", "**/.ssh/**"] },
   network: { default: "deny", allow_domains: [], deny_private_ips: true, deny_loopback: true, deny_link_local: true, deny_metadata_endpoints: true, target_egress: "isolated" },
-  tools: { default: "judge", rules: { fetch_url: { action: "allow_when_in_scope", base_risk: "medium" } } }
+  tools: { default: "judge", rules: { fetch_url: { action: "allow_when_in_scope", base_risk: "medium" } } },
+  capabilities: { tools: { fetch_url: { filesystem: "none", network: "allowlist", command_exec: false, subprocess: false, destructive: false } } }
 });
 const request: RemediationRequest = {
   blockedEventId: "event-1",
@@ -45,6 +46,12 @@ const addHostOutput = {
   reasoning: "The operator declared a legitimate public destination and local verification will add only its exact host.",
   expectedOutcome: "allow_legitimate_call" as const
 };
+const noChangeOutput = {
+  action: "NO_CHANGE" as const,
+  reasoning: "Target-side allowlisted egress is unsupported in enforce mode, so the blocked request must remain blocked.",
+  expectedOutcome: "keep_attack_blocked" as const
+};
+const noChangeRequest: RemediationRequest = { ...request, expectedSecurityOutcome: "keep_attack_blocked" };
 
 describe("Codex remediation guardrails", () => {
   it("builds a read-only, isolated, structured codex exec invocation", () => {
@@ -57,12 +64,12 @@ describe("Codex remediation guardrails", () => {
     expect(args).not.toContain("--non-interactive");
   });
 
-  it("accepts only a locally derived exact-host exception while retaining attack blocks", async () => {
+  it("refuses a host exception in enforce mode until an authenticated egress proxy exists", async () => {
     const source = configYaml(current);
     const result = await verifyRemediation({ output: addHostOutput, policyYaml: source, request, attackFixtures: attacks });
-    expect(result.verified).toBe(true);
+    expect(result.verified).toBe(false);
     expect(result.operation).toEqual({ kind: "add_exact_network_domain", domain: "api.example.com" });
-    expect(result.patchedYaml).toContain("api.example.com");
+    expect(result.results.join(" ")).toContain("authenticated allowlisted egress proxy is not implemented");
   });
 
   it("rejects ambiguous, private, and sensitive request destinations", async () => {
@@ -144,33 +151,23 @@ describe("Codex remediation guardrails", () => {
     }
   });
 
-  it("refuses stale policies and replay arguments that do not match the verified proposal", async () => {
+  it("preserves a verified no-change proposal and refuses to apply it", async () => {
     const source = configYaml(current);
-    const verification = await verifyRemediation({ output: addHostOutput, policyYaml: source, request, attackFixtures: attacks });
+    const verification = await verifyRemediation({ output: noChangeOutput, policyYaml: source, request: noChangeRequest, attackFixtures: attacks });
     expect(verification.verified).toBe(true);
     const directory = await mkdtemp(path.join(os.tmpdir(), "toolbastion-remediation-test-"));
     try {
       const policyPath = path.join(directory, "toolbastion.config.yaml");
-      await writeFile(policyPath, configYaml({ ...current, network: { ...current.network, allow_domains: ["other.example.com"] } }), "utf8");
-      const proposal = await saveProposal(directory, request, addHostOutput, verification, source);
-      await expect(applyProposal({
-        directory,
-        proposalId: proposal.proposalId,
-        policyPath,
-        actor: "tester",
-        request,
-        attackFixtures: attacks
-      })).rejects.toThrow(/changed since proposal verification/);
-
       await writeFile(policyPath, source, "utf8");
+      const proposal = await saveProposal(directory, noChangeRequest, noChangeOutput, verification, source);
       await expect(applyProposal({
         directory,
         proposalId: proposal.proposalId,
         policyPath,
         actor: "tester",
-        request: { ...request, args: { url: "https://api.example.com/different" } },
+        request: noChangeRequest,
         attackFixtures: attacks
-      })).rejects.toThrow(/Replay arguments do not match/);
+      })).rejects.toThrow(/Only verified host-exception proposals can be applied/);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -178,10 +175,10 @@ describe("Codex remediation guardrails", () => {
 
   it("rejects a locally modified remediation proposal before it can be applied", async () => {
     const source = configYaml(current);
-    const verification = await verifyRemediation({ output: addHostOutput, policyYaml: source, request, attackFixtures: attacks });
+    const verification = await verifyRemediation({ output: noChangeOutput, policyYaml: source, request: noChangeRequest, attackFixtures: attacks });
     const directory = await mkdtemp(path.join(os.tmpdir(), "toolbastion-remediation-integrity-"));
     try {
-      const proposal = await saveProposal(directory, request, addHostOutput, verification, source);
+      const proposal = await saveProposal(directory, noChangeRequest, noChangeOutput, verification, source);
       const proposalPath = path.join(directory, `${proposal.proposalId}.json`);
       const tampered = JSON.parse(await readFile(proposalPath, "utf8")) as Record<string, unknown>;
       tampered.verified = false;

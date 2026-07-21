@@ -13,6 +13,23 @@ import { bastionReceiptSchema, toolbastionConfigSchema } from "../../packages/sh
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const projectRoot = path.join(root, ".test-tmp", "enforcement-project");
 const configPath = path.join(projectRoot, "toolbastion.config.yaml");
+const capabilities = {
+  read_project_file: { filesystem: "read" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  run_project_command: { filesystem: "none" as const, network: "deny" as const, command_exec: true, subprocess: true, destructive: false },
+  fetch_url: { filesystem: "none" as const, network: "deny" as const, command_exec: false, subprocess: false, destructive: false },
+  get_execution_count: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  get_canary_delivery_count: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  // This intentionally misleading name has a target-internal loopback action
+  // and no URL input. The baseline below declares a different contract to
+  // prove that capability changes invalidate unchanged metadata.
+  innocent_status: { filesystem: "none" as const, network: "deny" as const, command_exec: false, subprocess: false, destructive: false },
+  get_deceptive_network_execution_count: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  emit_output: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  get_process_id: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  emit_tool_list_change: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  slow_tool: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: false, destructive: false },
+  slow_child_tree: { filesystem: "none" as const, network: "none" as const, command_exec: false, subprocess: true, destructive: false }
+};
 let transport: StdioClientTransport;
 let client: Client;
 let resolveToolListChanged: (() => void) | undefined;
@@ -26,7 +43,10 @@ beforeAll(async () => {
   await discovery.connect();
   const tools = (await discovery.listTools()).tools;
   await discovery.close();
-  await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools));
+  await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline(target.name, tools, {
+    ...capabilities,
+    innocent_status: { ...capabilities.innocent_status, network: "none" }
+  }));
   const config = toolbastionConfigSchema.parse({
     version: 1,
     mode: "enforce",
@@ -39,10 +59,12 @@ beforeAll(async () => {
     tools: { default: "judge", rules: {
       read_project_file: { base_risk: "low", action: "allow_when_in_scope" },
       get_execution_count: { base_risk: "low", action: "allow" },
+      get_deceptive_network_execution_count: { base_risk: "low", action: "allow" },
       emit_output: { base_risk: "low", action: "allow" },
       emit_tool_list_change: { base_risk: "low", action: "allow" },
       slow_tool: { base_risk: "low", action: "allow" }
-    } }
+    } },
+    capabilities: { tools: capabilities }
   });
   const { envAllowlist, ...targetConfig } = config.target;
   const serializable = { ...config, target: { ...targetConfig, env_allowlist: envAllowlist } };
@@ -128,10 +150,21 @@ describe("enforce mode", () => {
     ]);
   });
 
-  it("blocks target egress without an externally enforced guard", async () => {
+  it("blocks target egress without a declared contained capability", async () => {
     const result = await client.callTool({ name: "fetch_url", arguments: { url: "https://api.github.com/repos" } });
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toContain("target_egress_not_isolated");
+    expect(JSON.stringify(result.content)).toContain("capability_containment_required");
+  });
+
+  it("blocks a misleading no-URL network tool before its internal loopback action and invalidates changed capabilities", async () => {
+    const before = await client.callTool({ name: "get_deceptive_network_execution_count", arguments: {} });
+    const countBefore = Number((before.content as Array<{ text: string }>)[0]?.text);
+    expect(countBefore).toBe(0);
+    const blocked = await client.callTool({ name: "innocent_status", arguments: {} });
+    expect(blocked.isError).toBe(true);
+    expect(JSON.stringify(blocked.content)).toContain("tool_trust_not_approved");
+    const after = await client.callTool({ name: "get_deceptive_network_execution_count", arguments: {} });
+    expect(Number((after.content as Array<{ text: string }>)[0]?.text)).toBe(countBefore);
   });
 
   it("blocks calls to tools absent from the current inventory", async () => {

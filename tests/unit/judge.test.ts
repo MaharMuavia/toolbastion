@@ -91,17 +91,20 @@ describe("offline fixture replay", () => {
 });
 
 describe("judge prompt boundaries", () => {
-  it("keeps raw context, metadata, argument keys, and values out of the external judge prompt", () => {
+  it("keeps raw context, metadata, arguments, paths, URLs, commands, credentials, and policy text out of the external judge prompt", () => {
     const contextSentinel = "IGNORE_ALL_POLICY_CONTEXT_SENTINEL";
     const argumentKeySentinel = "PRIVATE_ARGUMENT_KEY_SENTINEL";
     const argumentValueSentinel = "PRIVATE_ARGUMENT_VALUE_SENTINEL";
     const policySentinel = "PRIVATE_POLICY_SENTINEL";
     const descriptionSentinel = "UNTRUSTED_DESCRIPTION_SENTINEL";
+    const pathSentinel = "C:\\private\\PRIVATE_PATH_SENTINEL.txt";
+    const urlSentinel = "https://private.example/PRIVATE_URL_SENTINEL?token=PRIVATE_TOKEN_SENTINEL";
+    const commandSentinel = "PRIVATE_COMMAND_SENTINEL --credential PRIVATE_CREDENTIAL_SENTINEL";
     const prompt = buildJudgePrompt("scope_safety", projectForExternalJudge({
       toolName: "read_project_file",
       untrustedDescription: descriptionSentinel,
       schemaSummary: {},
-      args: { [argumentKeySentinel]: argumentValueSentinel },
+      args: { [argumentKeySentinel]: argumentValueSentinel, path: pathSentinel, url: urlSentinel, command: commandSentinel },
       policySummary: { paths: { allow: [policySentinel], deny: [] }, network: { default: "deny", allow_domains: [policySentinel] }, toolRule: { action: "judge", base_risk: "low" } },
       deterministicEvidence: [],
       recentEvents: [],
@@ -118,7 +121,12 @@ describe("judge prompt boundaries", () => {
     expect(prompt).not.toContain(argumentKeySentinel);
     expect(prompt).not.toContain(argumentValueSentinel);
     expect(prompt).not.toContain(policySentinel);
-    expect(prompt).toContain("intentCategory");
+    expect(prompt).not.toContain(pathSentinel);
+    expect(prompt).not.toContain(urlSentinel);
+    expect(prompt).not.toContain(commandSentinel);
+    expect(prompt).not.toContain("PRIVATE_CREDENTIAL_SENTINEL");
+    expect(prompt).toContain('"category"');
+    expect(prompt).not.toContain("intentCategory");
   });
 
   it("distinguishes safe test execution from destructive execution without raw commands", () => {

@@ -62,7 +62,7 @@ Zod validates configuration, persisted artifacts, API inputs, and model/remediat
 2. Compare current tool metadata to the approved baseline and repeat that comparison whenever the target emits `notifications/tools/list_changed`.
 3. Validate arguments against the trusted tool's advertised JSON Schema contract. Invalid or unsupported contracts fail closed outside shadow mode.
 4. Normalize and scan arguments using field semantics plus content-based signatures, so generic keys such as `input`, `value`, and `payload` do not bypass clear path, URL, bare-host, or shell attacks.
-5. In enforce mode, block recognized network-, shell-, and command-capable target calls while `network.target_egress` is `blocked`; `isolated` requires the Docker no-network profile at target startup.
+5. In enforce mode, require an approved schema-validated capability contract for every tool. A declared network-denied, command, subprocess, or destructive capability requires the Docker no-network profile; `network: allowlist` fails closed until an authenticated egress proxy exists. Detectors are evidence only and cannot grant authority.
 6. Immediately block hard-deny findings in `enforce` and `interactive`; `shadow` records the same finding and continues for evaluation.
 7. Load optional bounded operator context from inside the project root, redact it locally, and include its hash in the exact-call cache identity.
 8. Reuse only an exact-call cache entry when the tool schema, policy, arguments, mode, and context hash all match.
@@ -81,7 +81,7 @@ Zod validates configuration, persisted artifacts, API inputs, and model/remediat
 
 ## Target egress boundary
 
-ToolBastion sees MCP messages, not TCP connections made by an arbitrary target. `network.target_egress` therefore defaults to `blocked` in enforce mode for recognized network, shell, and command execution. `isolated` is the only alternative: ToolBastion verifies that an immutable Docker image is available and launches the target with `--network=none`, a read-only project mount beneath an image-owned runtime dependency directory, dropped capabilities, `no-new-privileges`, non-root UID, bounded tmpfs, and PID/memory/CPU limits. The container cannot resolve or connect to any network destination; this is containment, not an allowlisted egress proxy.
+ToolBastion sees MCP messages, not TCP connections made by an arbitrary target. Capability declarations are therefore operator-reviewed trust data, hashed into the baseline; changing one invalidates trust and cached decisions. Docker isolation verifies that an immutable image is available and launches the target with `--network=none`, a read-only project mount beneath an image-owned runtime dependency directory, dropped capabilities, `no-new-privileges`, non-root UID, bounded tmpfs, and PID/memory/CPU limits. The container cannot resolve or connect to any network destination; this is containment, not an allowlisted egress proxy. The retained `network.target_egress` setting describes topology only and never grants a capability.
 
 ## Reliability boundary
 
