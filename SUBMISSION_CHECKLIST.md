@@ -22,7 +22,7 @@ This checklist describes the `0.1.4` release candidate in the current commit. Lo
 | `git diff --check` | Verified | Exit `0`; only Git line-ending normalization warnings were emitted. | Run after staging the final commit. |
 | Evaluation/snapshot hashes | Verified | Evaluation SHA-256 `8d13b9eb3aa73e2ab103281186455fb6feab8d0b715156587078c23daf6894db`; snapshot audit SHA-256 `2a644b52753ea0825bcc3d18cacb836123c4a42e1f6e62ae66fc5a7319c59443`. | Recompute after the final commit if artifacts change. |
 | GitHub Release `v0.1.4` | Pending | The release commit exists; the tag and GitHub release do not. | Create the tag, push it, then verify the release assets and image digest. |
-| YouTube video under 3 minutes | Human action pending | `docs/demo-script.md` exists; no video was supplied. | Record, review, and upload the video. |
-| Codex `/feedback` session ID | Human action pending | No session ID was supplied. | Run `/feedback` in the primary task and record the returned ID. |
+| YouTube video under 3 minutes | Owner-supplied | [Demo URL](https://youtu.be/EcI2DhUJo2s) | Confirm the video is public, under 3:00, and the voiceover explains the build, Codex use, and GPT-5.6 use. |
+| Codex `/feedback` session ID | Owner-supplied | `019f8430-7d0d-7951-9eec-f8a3a1ba4190` in `docs/feedback-session.md` | Confirm this is the exact ID returned by a successful `/feedback` submission; do not submit a task/thread ID. |
 
-The project is not marked production-ready. External publication, release signing/provenance, video upload, and feedback ID still require human authority.
+The project is not marked production-ready. External publication and release signing/provenance still require human authority.

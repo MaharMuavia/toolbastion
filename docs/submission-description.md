@@ -29,10 +29,10 @@ The target users are developers and platform/security teams experimenting with l
 | Artifact | Link/status |
 | --- | --- |
 | Repository | `https://github.com/MaharMuavia/toolbastion` |
-| Public YouTube demo | **Pending owner recording/upload** |
+| Public YouTube demo (owner-supplied; verify duration and narration) | `https://youtu.be/EcI2DhUJo2s` |
 | Hosted read-only dashboard | `https://maharmuavia.github.io/toolbastion/` — verify after the Pages workflow completes |
 | Container image | `ghcr.io/maharmuavia/toolbastion:<published-tag>` — verify the exact release tag after the workflow completes |
 | GitHub Release | `https://github.com/MaharMuavia/toolbastion/releases/tag/<published-tag>` — verify through the GitHub Releases API after the workflow completes |
-| `/feedback` Codex Session ID | **Not yet recorded — see `docs/feedback-session.md`** |
+| `/feedback` Codex Session ID (owner-supplied; verify returned value) | `019f8430-7d0d-7951-9eec-f8a3a1ba4190` |
 
-The repository destinations are deterministic publication targets. The owner-supplied YouTube URL and `/feedback` Session ID remain explicit pending fields and are never fabricated.
+The repository destinations are deterministic publication targets. The owner-supplied YouTube URL and `/feedback` Session ID are recorded above; verify both in the submission form before final submission.

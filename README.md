@@ -286,7 +286,7 @@ The corpus covers path traversal, symlink escape, secret-file access, shell inje
 - Audit hashes do not prevent replacement of an entire chain and its unanchored trust source; unsalted argument hashes are correlation identifiers, not protection for low-entropy secrets.
 - Offline fixture metrics measure implemented decisions, not production prevalence or live GPT-5.6 quality.
 - macOS and ARM are not release-certified yet.
-- The public demo video and `/feedback` Session ID remain owner-submission actions; they are never fabricated by the project.
+- [Public demo video](https://youtu.be/EcI2DhUJo2s) and the owner-supplied `/feedback` Session ID are recorded for external submission verification.
 
 ## Submission and release handoff
 
@@ -294,8 +294,9 @@ The corpus covers path traversal, symlink escape, secret-file access, shell inje
 - [Submission description](docs/submission-description.md)
 - [Demo script (2:50)](docs/demo-script.md)
 - [Screenshots](docs/screenshots/README.md)
+- [Public demo video](https://youtu.be/EcI2DhUJo2s)
 - [Submission checklist](SUBMISSION_CHECKLIST.md)
-- [`/feedback` session record](docs/feedback-session.md) — **not yet recorded; human action required**
+- [`/feedback` session record](docs/feedback-session.md) — owner-supplied ID `019f8430-7d0d-7951-9eec-f8a3a1ba4190`; verify it came from a successful `/feedback` response before submission.
 
 GitHub Actions validates pushes, regenerates and checks the committed read-only snapshot, deploys it to Pages, and publishes tagged source archives/checksums plus `linux/amd64` GHCR images from `v*` tags.
 

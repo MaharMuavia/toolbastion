@@ -2,6 +2,10 @@
   "capturedAt": "2026-07-21",
   "releaseCandidate": "0.1.4",
   "releaseTag": "v0.1.4",
+  "youtubeDemoUrl": "https://youtu.be/EcI2DhUJo2s",
+  "youtubeDemoStatus": "owner-supplied; public status, duration, and narration require external verification",
+  "feedbackSessionId": "019f8430-7d0d-7951-9eec-f8a3a1ba4190",
+  "feedbackSessionStatus": "owner-supplied; exact /feedback response requires external verification",
   "evidenceScope": "release-candidate commit; external release claims are pending",
   "commands": [
     { "command": "npm.cmd ci --no-fund --no-audit", "exitCode": 0, "status": "passed" },
@@ -28,7 +32,6 @@
   "remainingBlockers": [
     "The v0.1.4 tag has not been created, so published release lineage is not claimed.",
     "GitHub release, container publication/digest verification, and release provenance/signing require external authority.",
-    "YouTube video recording/upload and the Codex /feedback session ID require human action.",
     "No authenticated allowlisted egress proxy exists; enforce mode rejects that capability."
   ]
 }
