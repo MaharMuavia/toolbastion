@@ -1,7 +1,8 @@
 import { createHash, createPrivateKey, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { watch, type FSWatcher } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { Ajv2020, type AnySchemaObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -212,6 +213,7 @@ async function assertWritableMountsWithinProject(config: TargetServerConfig, pro
   for (const relativePath of config.isolation.writable_paths) {
     const candidate = path.resolve(root, relativePath);
     const canonical = await realpath(candidate).catch(() => { throw new Error(`Writable containment path does not exist: ${relativePath}`); });
+    if (path.resolve(candidate) !== path.resolve(canonical)) throw new Error(`Writable containment path must not be a symlink or junction: ${relativePath}`);
     const relative = path.relative(normalizeCase(root), normalizeCase(canonical));
     if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error(`Writable containment path resolves outside project_root: ${relativePath}`);
@@ -303,17 +305,215 @@ async function resolveExecutablePath(command: string): Promise<string> {
   throw new Error(`Target executable could not be resolved for artifact hashing: ${command}`);
 }
 
-async function resolveTargetInputFiles(config: TargetServerConfig, projectRoot: string): Promise<string[]> {
-  const files = new Set<string>();
-  for (const argument of config.args) {
-    if (argument.startsWith("-") || /^[a-z][a-z0-9+.-]*:\/\//i.test(argument)) continue;
-    const candidate = path.resolve(config.cwd === undefined ? projectRoot : path.resolve(projectRoot, config.cwd), argument);
-    try {
-      const metadata = await stat(candidate);
-      if (metadata.isFile()) files.add(await realpath(candidate));
-    } catch { /* non-path arguments are not artifact files */ }
+type StableFile = { path: string; bytes: Buffer; hash: string };
+const stableFileCache = new Map<string, { size: number; mtimeMs: number; hash: string; bytes: Buffer }>();
+type ArtifactClosure = { files: StableFile[]; manifest: StableFile; lockfile: StableFile; manifestPath: string; lockfilePath: string };
+const artifactClosureCache = new Map<string, ArtifactClosure>();
+type ArtifactWatchState = { invalidated: boolean; reliable: boolean; watchers: FSWatcher[] };
+const artifactWatchStates = new Map<string, ArtifactWatchState>();
+const artifactIdentityCache = new Map<string, { identity: TargetArtifactIdentity; watchKey: string }>();
+
+async function readStableFile(filePath: string, useCache = true): Promise<StableFile> {
+  const resolved = await realpath(filePath);
+  const before = await stat(resolved);
+  if (!before.isFile()) throw new Error(`Artifact identity path is not a regular file: ${resolved}`);
+  const cached = stableFileCache.get(resolved);
+  if (useCache && cached !== undefined && cached.size === before.size && cached.mtimeMs === before.mtimeMs) return { path: resolved, bytes: cached.bytes, hash: cached.hash };
+  const bytes = await readFile(resolved);
+  const after = await stat(resolved);
+  if (!after.isFile() || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+    throw new Error(`Artifact changed while its identity was being computed: ${resolved}`);
   }
-  return [...files].sort((left, right) => left.localeCompare(right));
+  const secondRead = await readFile(resolved);
+  const hash = sha256Bytes(bytes);
+  if (!bytes.equals(secondRead) || hash !== sha256Bytes(secondRead)) {
+    throw new Error(`Artifact changed while its identity was being computed: ${resolved}`);
+  }
+  stableFileCache.set(resolved, { size: after.size, mtimeMs: after.mtimeMs, hash, bytes });
+  return { path: resolved, bytes, hash };
+}
+
+async function nearestFile(startPath: string, names: readonly string[], label: string): Promise<string> {
+  let current = path.resolve(startPath);
+  try { current = (await stat(current)).isDirectory() ? current : path.dirname(current); }
+  catch { current = path.dirname(current); }
+  while (true) {
+    const matches: string[] = [];
+    for (const name of names) {
+      const candidate = path.join(current, name);
+      try {
+        if ((await stat(candidate)).isFile()) matches.push(await realpath(candidate));
+      } catch { /* continue searching */ }
+    }
+    if (matches.length > 1) throw new Error(`${label} is ambiguous near ${current}`);
+    if (matches.length === 1) return matches[0]!;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  throw new Error(`${label} could not be found for target artifact identity`);
+}
+
+async function resolveArtifactEntrypoints(config: TargetServerConfig, projectRoot: string): Promise<string[]> {
+  const launchDirectory = path.resolve(projectRoot, config.cwd ?? ".");
+  const candidates = config.args
+    .filter((argument) => !argument.startsWith("-") && !/^[a-z][a-z0-9+.-]*:\/\//i.test(argument))
+    .map((argument) => path.isAbsolute(argument) ? argument : path.resolve(launchDirectory, argument));
+  const entrypoints: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      if ((await stat(candidate)).isFile()) entrypoints.push(await realpath(candidate));
+    } catch { /* non-file arguments are not entrypoints */ }
+  }
+  if (entrypoints.length === 0) throw new Error("Non-Docker target must declare a statically discoverable file entrypoint in target.args");
+  return [...new Set(entrypoints)].sort((left, right) => left.localeCompare(right));
+}
+
+function resolveImport(fromFile: string, specifier: string): string | undefined {
+  if (specifier.startsWith("node:") || builtinModules.includes(specifier)) return undefined;
+  if (specifier.startsWith("./") || specifier.startsWith("../") || path.isAbsolute(specifier)) {
+    const candidate = path.isAbsolute(specifier) ? specifier : path.resolve(path.dirname(fromFile), specifier);
+    const candidates = [candidate, ...[".js", ".mjs", ".cjs", ".json", ".ts", ".tsx"].map((extension) => `${candidate}${extension}`), ...["index.js", "index.mjs", "index.cjs", "index.ts"].map((name) => path.join(candidate, name))];
+    for (const value of candidates) {
+      try { return require.resolve(value); } catch { /* try the next extension */ }
+    }
+    throw new Error(`Artifact dependency could not be resolved statically: ${specifier} imported by ${fromFile}`);
+  }
+  try { return require.resolve(specifier, { paths: [path.dirname(fromFile)] }); }
+  catch { throw new Error(`Artifact dependency could not be resolved statically: ${specifier} imported by ${fromFile}`); }
+}
+
+function stripJavaScriptComments(source: string): string {
+  let output = "";
+  let quote: "'" | "\"" | "`" | undefined;
+  let regularExpression = false;
+  let regularExpressionClass = false;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+    const next = source[index + 1];
+    if (quote !== undefined) {
+      output += character;
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (regularExpression) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === "[") regularExpressionClass = true;
+      else if (character === "]") regularExpressionClass = false;
+      else if (character === "/" && !regularExpressionClass) regularExpression = false;
+      output += " ";
+      continue;
+    }
+    if (character === "'" || character === "\"" || character === "`") {
+      quote = character;
+      output += character;
+      continue;
+    }
+    if (character === "/" && next === "/") {
+      index += 1;
+      while (index + 1 < source.length && source[index + 1] !== "\n") index += 1;
+      output += "\n";
+      continue;
+    }
+    if (character === "/" && next === "*") {
+      index += 2;
+      while (index + 1 < source.length && !(source[index] === "*" && source[index + 1] === "/")) index += 1;
+      index += 1;
+      output += " ";
+      continue;
+    }
+    if (character === "/") {
+      const significant = output.trimEnd();
+      const last = significant.at(-1);
+      if (last === undefined || "=(:,;!&|?{}[]".includes(last) || /\b(?:return|throw|case|typeof|void|delete|in|of|yield|await)$/.test(significant)) {
+        regularExpression = true;
+        regularExpressionClass = false;
+        escaped = false;
+        output += " ";
+        continue;
+      }
+    }
+    output += character;
+  }
+  return output;
+}
+
+async function discoverArtifactClosure(entrypoints: string[], useCache = true): Promise<ArtifactClosure> {
+  const manifestPath = await nearestFile(entrypoints[0]!, ["package.json"], "Target package manifest");
+  const lockfilePath = await nearestFile(path.dirname(manifestPath), ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"], "Target dependency lockfile");
+  const pending = [...entrypoints];
+  const seen = new Set<string>();
+  const files = new Map<string, StableFile>();
+  while (pending.length > 0) {
+    const current = await realpath(pending.pop()!);
+    if (seen.has(current)) continue;
+    seen.add(current);
+    const stable = await readStableFile(current, useCache);
+    files.set(current, stable);
+    const extension = path.extname(current).toLowerCase();
+    if (![".js", ".mjs", ".cjs", ".ts", ".tsx"].includes(extension)) continue;
+    const source = stable.bytes.toString("utf8");
+    if (/\b(?:import|require)\s*\(\s*(?!["'`])/.test(source)) throw new Error(`Dynamic artifact dependency resolution is unsupported: ${current}`);
+    const imports = new Set<string>();
+    const pattern = /(?:\bimport\s+(?:[\s\S]*?\s+from\s+|)|\bexport\s+(?:[\s\S]*?\s+from\s+|)|\brequire\s*\(\s*|\bimport\s*\(\s*)["'`]([^"'`]+)["'`]/g;
+    for (const match of stripJavaScriptComments(source).matchAll(pattern)) if (match[1] !== undefined) imports.add(match[1]);
+    for (const specifier of imports) {
+      const resolved = resolveImport(current, specifier);
+      if (resolved !== undefined) pending.push(resolved);
+    }
+  }
+  const manifest = await readStableFile(manifestPath, useCache);
+  const lockfile = await readStableFile(lockfilePath, useCache);
+  files.set(manifest.path, manifest);
+  files.set(lockfile.path, lockfile);
+  return { files: [...files.values()].sort((left, right) => left.path.localeCompare(right.path)), manifest, lockfile, manifestPath: manifest.path, lockfilePath: lockfile.path };
+}
+
+function watchArtifactClosure(key: string, closure: ArtifactClosure, extraPaths: readonly string[] = []): void {
+  const previous = artifactWatchStates.get(key);
+  for (const watcher of previous?.watchers ?? []) watcher.close();
+  const state: ArtifactWatchState = { invalidated: false, reliable: true, watchers: [] };
+  const directories = new Set([...closure.files, ...extraPaths.map((filePath) => ({ path: filePath }))].map((file) => path.dirname(file.path)));
+  for (const directory of directories) {
+    try {
+      const watcher = watch(directory, () => { state.invalidated = true; });
+      watcher.on("error", () => { state.reliable = false; state.invalidated = true; });
+      state.watchers.push(watcher);
+    } catch {
+      state.reliable = false;
+      state.invalidated = true;
+    }
+  }
+  if (state.watchers.length === 0) state.reliable = false;
+  artifactWatchStates.set(key, state);
+}
+
+async function refreshArtifactClosure(key: string, entrypoints: string[], manifestPath: string, lockfilePath: string, cached: ArtifactClosure): Promise<ArtifactClosure> {
+  const watchState = artifactWatchStates.get(key);
+  if (watchState === undefined || !watchState.reliable || watchState.invalidated) return await discoverArtifactClosure(entrypoints, false);
+  let changed = cached.manifestPath !== manifestPath || cached.lockfilePath !== lockfilePath;
+  const refreshed: StableFile[] = [];
+  for (const file of cached.files) {
+    const current = await readStableFile(file.path);
+    if (current.hash !== file.hash) changed = true;
+    refreshed.push(current);
+  }
+  if (!changed) {
+    const manifest = refreshed.find((file) => file.path === manifestPath);
+    const lockfile = refreshed.find((file) => file.path === lockfilePath);
+    if (manifest !== undefined && lockfile !== undefined) return cached;
+    changed = true;
+  }
+  return await discoverArtifactClosure(entrypoints, false);
+}
+
+function portableArtifactPath(filePath: string, packageRoot: string): string {
+  const relative = path.relative(packageRoot, filePath).split(path.sep).join("/");
+  return relative === "" ? "." : relative.startsWith("..") ? `external/${path.basename(filePath)}` : `./${relative}`;
 }
 
 export async function resolveTargetArtifactIdentity(configInput: TargetServerConfigInput | TargetServerConfig, projectRoot: string): Promise<TargetArtifactIdentity> {
@@ -323,6 +523,12 @@ export async function resolveTargetArtifactIdentity(configInput: TargetServerCon
       return { ...target, env_allowlist: envAllowlist };
     })()
     : configInput);
+  const identityCacheKey = canonicalJson({ config, projectRoot: path.resolve(projectRoot) });
+  const cachedIdentity = artifactIdentityCache.get(identityCacheKey);
+  if (cachedIdentity !== undefined) {
+    const watchState = artifactWatchStates.get(cachedIdentity.watchKey);
+    if (watchState?.reliable === true && watchState.invalidated === false) return cachedIdentity.identity;
+  }
   if (config.isolation.provider === "docker") {
     const inspected = await inspectDockerImage(config.isolation.image);
     const digest = config.isolation.image.startsWith("sha256:")
@@ -331,15 +537,48 @@ export async function resolveTargetArtifactIdentity(configInput: TargetServerCon
     return targetArtifactIdentitySchema.parse({ kind: "docker", reference: config.isolation.image, digest, imageId: inspected.imageId });
   }
   const executablePath = await resolveExecutablePath(config.command);
-  const executableHash = sha256Bytes(await readFile(executablePath));
-  const inputFiles = await resolveTargetInputFiles(config, path.resolve(projectRoot));
-  const inputHashes = await Promise.all(inputFiles.map(async (filePath) => ({ path: filePath, hash: sha256Bytes(await readFile(filePath)) })));
-  return targetArtifactIdentitySchema.parse({
+  const executable = await readStableFile(executablePath, false);
+  const entrypoints = await resolveArtifactEntrypoints(config, path.resolve(projectRoot));
+  const manifestPath = await nearestFile(entrypoints[0]!, ["package.json"], "Target package manifest");
+  const lockfilePath = await nearestFile(path.dirname(manifestPath), ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"], "Target dependency lockfile");
+  const closureKey = entrypoints.join("\u0000");
+  const cachedClosure = artifactClosureCache.get(closureKey);
+  const closure = cachedClosure === undefined
+    ? await discoverArtifactClosure(entrypoints, false)
+    : await refreshArtifactClosure(closureKey, entrypoints, manifestPath, lockfilePath, cachedClosure);
+  artifactClosureCache.set(closureKey, closure);
+  if (cachedClosure !== closure) watchArtifactClosure(closureKey, closure, [executablePath]);
+  const packageRoot = path.dirname(closure.manifest.path);
+  const dependencyFiles = closure.files.map((file) => ({ path: portableArtifactPath(file.path, packageRoot), hash: file.hash }));
+  const dependencyClosureHash = sha256(canonicalJson(dependencyFiles));
+  const buildHash = sha256(canonicalJson({
+    command: config.command,
+    args: config.args,
+    cwd: config.cwd ?? ".",
+    executableHash: executable.hash,
+    entrypoints: entrypoints.map((file) => ({ path: portableArtifactPath(file, packageRoot), hash: closure.files.find((candidate) => candidate.path === file)?.hash })),
+    manifestHash: closure.manifest.hash,
+    lockfileHash: closure.lockfile.hash,
+    dependencyClosureHash
+  }));
+  const primaryEntrypoint = entrypoints[0]!;
+  const primary = closure.files.find((file) => file.path === primaryEntrypoint);
+  if (!primary) throw new Error("Target entrypoint disappeared while its identity was being computed");
+  const identity = targetArtifactIdentitySchema.parse({
     kind: "executable",
     executablePath,
-    executableHash,
-    buildHash: sha256(canonicalJson(inputHashes))
+    executableHash: executable.hash,
+    entrypointPath: portableArtifactPath(primaryEntrypoint, packageRoot),
+    entrypointHash: primary.hash,
+    manifestPath: portableArtifactPath(closure.manifest.path, packageRoot),
+    manifestHash: closure.manifest.hash,
+    lockfilePath: portableArtifactPath(closure.lockfile.path, packageRoot),
+    lockfileHash: closure.lockfile.hash,
+    dependencyClosureHash,
+    buildHash
   });
+  artifactIdentityCache.set(identityCacheKey, { identity, watchKey: closureKey });
+  return identity;
 }
 
 export class ToolBastionTargetClient {
@@ -664,6 +903,7 @@ export class ToolBastionProxy {
   readonly #acceptedCalls = new Map<string, AcceptedCall>();
   #tools: Awaited<ReturnType<ToolBastionTargetClient["listTools"]>>["tools"] = [];
   #untrustedTools = new Set<string>();
+  #approvedArtifactIdentity: TargetArtifactIdentity | undefined;
   #inflightCalls = 0;
   #auditFailed = false;
 
@@ -676,7 +916,11 @@ export class ToolBastionProxy {
     this.#audit = options.audit ?? new AuditLog(
       resolveWithinProject(config.project_root, config.audit.directory, "audit.directory"),
       undefined,
-      { retainRawContent: config.audit.retain_raw_content }
+      {
+        retainRawContent: config.audit.retain_raw_content,
+        signingRequired: config.audit.signingRequired,
+        ...(process.env.TOOLBASTION_AUDIT_PRIVATE_KEY === undefined ? {} : { privateKeyPem: process.env.TOOLBASTION_AUDIT_PRIVATE_KEY })
+      }
     );
     this.#server = new Server({ name: "toolbastion", version: TOOLBASTION_VERSION }, { capabilities: { tools: { listChanged: true } } });
     this.#server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: this.#visibleTools() }));
@@ -689,6 +933,12 @@ export class ToolBastionProxy {
       if (!privateKeyPem) throw new Error("Receipt signing is required but TOOLBASTION_RECEIPT_PRIVATE_KEY is unavailable");
       const privateKey = createPrivateKey(privateKeyPem);
       if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("Receipt signing requires an Ed25519 private key");
+    }
+    if (this.#config.audit.signingRequired) {
+      const privateKeyPem = process.env.TOOLBASTION_AUDIT_PRIVATE_KEY;
+      if (!privateKeyPem) throw new Error("Audit signing is required but TOOLBASTION_AUDIT_PRIVATE_KEY is unavailable");
+      const privateKey = createPrivateKey(privateKeyPem);
+      if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("Audit signing requires an Ed25519 private key");
     }
     await this.#target.preflight();
     if (!await this.#appendAudit("session_started", { sessionId: this.#audit.sessionId })) {
@@ -716,8 +966,11 @@ export class ToolBastionProxy {
     let diff: TrustDiff;
     try {
       const artifactIdentity = await resolveTargetArtifactIdentity(this.#config.target, this.#config.project_root);
-      diff = diffTrustBaseline(await readTrustBaseline(baselinePath), this.#tools, this.#config.capabilities.tools, this.#config.target.name, artifactIdentity);
+      const baseline = await readTrustBaseline(baselinePath);
+      this.#approvedArtifactIdentity = baseline.artifactIdentity;
+      diff = diffTrustBaseline(baseline, this.#tools, this.#config.capabilities.tools, this.#config.target.name, artifactIdentity);
     } catch (error) {
+      this.#approvedArtifactIdentity = undefined;
       diff = { added: this.#tools.map((tool) => tool.name), removed: [], schemaChanged: [], descriptionChanged: [], capabilityChanged: [], poisoned: [], unchanged: [], artifactChanged: true };
       this.#emitEvent("trust_verified", { approved: false, error: error instanceof Error ? error.message : "baseline unavailable", diff });
     }
@@ -734,6 +987,17 @@ export class ToolBastionProxy {
     if (notifyDownstream) await this.#server.sendToolListChanged();
   }
 
+  async #artifactIsStable(): Promise<boolean> {
+    if (this.#config.mode === "shadow") return true;
+    if (this.#approvedArtifactIdentity === undefined) return false;
+    try {
+      const current = await resolveTargetArtifactIdentity(this.#config.target, this.#config.project_root);
+      return canonicalJson(current) === canonicalJson(this.#approvedArtifactIdentity);
+    } catch {
+      return false;
+    }
+  }
+
   #visibleTools() {
     return this.#config.mode === "shadow" ? this.#tools : this.#tools.filter((tool) => !this.#untrustedTools.has(tool.name));
   }
@@ -741,6 +1005,12 @@ export class ToolBastionProxy {
   async #handleCall(toolName: string, args: Record<string, unknown>) {
     const accepted = this.#acceptCall(toolName, args);
     if (this.#config.mode === "enforce" && this.#auditFailed) return this.#preDispatchAuditUnavailable(toolName, {}, accepted);
+    if (!await this.#artifactIsStable()) {
+      return this.#blocked(toolName, "target_artifact_changed", ["The target executable or dependency closure changed after trust verification"], {
+        ...accepted,
+        deterministicEvidence: [{ category: "target_artifact_changed", severity: "critical" }]
+      });
+    }
     if (this.#inflightCalls >= this.#config.limits.max_inflight_calls) {
       return this.#blocked(toolName, "too_many_inflight_calls", ["The target call queue is full"], {
         ...accepted,

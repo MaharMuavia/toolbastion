@@ -14,8 +14,8 @@ export const sessionReportSchema = z.object({
 export type SessionReport = z.infer<typeof sessionReportSchema>;
 
 const risks = ["none", "low", "medium", "high", "critical"];
-export async function generateSessionReport(filePath: string, generatedAt = new Date().toISOString()): Promise<SessionReport> {
-  const events = await readAuditEvents(filePath);
+export async function generateSessionReport(filePath: string, generatedAt = new Date().toISOString(), expectedSessionId?: string): Promise<SessionReport> {
+  const events = await readAuditEvents(filePath, expectedSessionId);
   if (events.length === 0) throw new Error("Cannot generate a report from an empty audit log");
   const decisions = events.map((event) => typeof event.payload.decision === "string" ? event.payload.decision : "");
   const riskLevels = events.map((event) => {

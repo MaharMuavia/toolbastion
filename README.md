@@ -190,7 +190,7 @@ Set `TOOLBASTION_REMEDIATION_HMAC_KEY` to a unique secret of at least 32 bytes b
 
 The proxy speaks MCP JSON-RPC on stdout. Human diagnostics and lifecycle events use stderr only.
 
-Trust baselines created by current versions are v3 and include the reviewed `capabilities.tools` contract plus the resolved target artifact identity. Existing v1/v2 baselines safely fail closed until the operator reviews the current contracts and target artifact and runs:
+Trust baselines created by current versions are v4 and include the reviewed `capabilities.tools` contract plus the resolved executable, entrypoint, manifest, lockfile, and complete statically discoverable dependency closure. Existing v1/v2/v3 baselines safely fail closed until the operator reviews the current contracts and target artifact and runs:
 
 ```powershell
 node .\apps\cli\dist\index.js trust migrate --yes --config .\toolbastion.config.yaml

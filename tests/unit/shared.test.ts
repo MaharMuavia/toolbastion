@@ -29,4 +29,19 @@ describe("shared security primitives", () => {
       expect(() => toolbastionConfigSchema.parse({ version: 1, target: { name: "fixture", command: "node" }, audit: { directory } })).toThrow(/directory must be a relative path inside project_root/i);
     }
   });
+
+  it("requires containment and signed evidence in the strict production profile", () => {
+    expect(() => toolbastionConfigSchema.parse({
+      version: 1,
+      profile: "strict",
+      mode: "enforce",
+      target: { name: "fixture", command: "node" }
+    })).toThrow(/strict profile requires Docker containment/i);
+    expect(() => toolbastionConfigSchema.parse({
+      version: 1,
+      profile: "strict",
+      mode: "enforce",
+      target: { name: "fixture", command: "node", isolation: { provider: "docker", image: `registry.example/fixture@sha256:${"a".repeat(64)}` } }
+    })).toThrow(/strict profile requires signed receipts/i);
+  });
 });

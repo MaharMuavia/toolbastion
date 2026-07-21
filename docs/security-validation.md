@@ -7,7 +7,7 @@ Security validation is category-specific; it is not an accuracy claim.
 | Traversal, UNC, device paths, symlink escape | canonical path and scope checks | `tests/unit/detectors.test.ts`, `tests/unit/adversarial-properties.test.ts` |
 | Loopback, metadata, private, IPv6, userinfo, credential query | URL/IP normalization | same tests and `scripts/evaluate.mjs` |
 | Shell chaining, substitution, encoded PowerShell, destructive commands | deterministic shell detector | same tests and seeded corpus |
-| Innocent tool name / no URL argument | capability contract and baseline-v3 capability/artifact hash | `tests/integration/enforcement.test.ts` |
+| Innocent tool name / no URL argument | capability contract and baseline-v4 capability/artifact hash | `tests/integration/enforcement.test.ts` |
 | Hidden filesystem reads, read-to-write escalation, destructive operations, symlink escapes, and out-of-scope writes | filesystem contract intent checks plus canonical path containment and Docker writable mounts | `tests/unit/capabilities.test.ts`, `tests/unit/detectors.test.ts`, `tests/unit/adversarial-fast-check.test.ts` |
 | Missing, changed, command, or allowlisted capability | capability authorization | `tests/unit/capabilities.test.ts`, `tests/unit/policy.test.ts` |
 | Prompt injection and credential-like result | output quarantine/redaction | `tests/unit/output-firewall.test.ts` |

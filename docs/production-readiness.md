@@ -4,7 +4,7 @@ Current readiness: security-hardened development candidate; not production ready
 
 Implemented and covered locally:
 
-- Per-tool schema-validated capability contracts and immutable target artifact identity are hashed into trust-baseline v3. Enforce mode blocks missing, changed, unsupported, and uncontained contracts.
+- Per-tool schema-validated capability contracts and immutable target artifact identity are hashed into trust-baseline v4. Enforce mode blocks missing, changed, unsupported, and uncontained contracts.
 - Docker `--network=none` is containment only. `network: allowlist` fails closed because no authenticated egress proxy exists.
 - Receipts use acceptance-time `startedAt`, terminal-only `completedAt`, exclusive file creation, and optional operator-held Ed25519 signatures.
 - The proxy has bounded input/output traversal, target/judge deadlines, process cleanup, output quarantine, redacted audit records, and bounded dashboard event retention.

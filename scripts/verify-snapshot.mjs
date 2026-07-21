@@ -117,7 +117,7 @@ try {
     readJson(paths.generatedEvaluation),
     readJson(paths.evaluation)
   ]);
-  const snapshot = await verifyAndReadAuditFile(paths.audit);
+  const snapshot = await verifyAndReadAuditFile(paths.audit, undefined, session.sessionId);
   verification = snapshot.verification;
   if (!verification.valid) errors.push(...verification.errors);
 
@@ -151,7 +151,7 @@ try {
   if (!parsedReport.success) {
     errors.push("report.json does not match the report schema");
   } else if (isSnapshotSession(session) && verification.valid) {
-    const expectedReport = await generateSessionReport(paths.audit, session.startedAt);
+    const expectedReport = await generateSessionReport(paths.audit, session.startedAt, session.sessionId);
     if (canonicalJson(parsedReport.data) !== canonicalJson(expectedReport)) errors.push("report.json does not match the verified audit data");
     if (reportMarkdown !== renderMarkdownReport(expectedReport)) errors.push("report.md does not match report.json");
   }

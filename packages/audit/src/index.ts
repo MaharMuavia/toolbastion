@@ -146,6 +146,8 @@ export async function resolveAuditReadFile(projectRoot: string, configuredDirect
 
 export type AuditLogOptions = {
   retainRawContent: false;
+  signingRequired?: boolean;
+  privateKeyPem?: string;
   /** Test-only dependency seam for exercising the proxy's fail-closed path. */
   failWriteForEvent?: (eventType: string) => boolean;
 };
@@ -161,12 +163,16 @@ export class AuditLog {
   #closed = false;
   #writeFailed = false;
   readonly #retainRawContent: false;
+  readonly #signingRequired: boolean;
+  readonly #privateKeyPem: string | undefined;
   readonly #failWriteForEvent: ((eventType: string) => boolean) | undefined;
 
   constructor(directory: string, sessionId: string = randomUUID(), options: AuditLogOptions = { retainRawContent: false }) {
     this.sessionId = sessionId;
     this.filePath = auditFilePath(directory, sessionId);
     this.#retainRawContent = options.retainRawContent;
+    this.#signingRequired = options.signingRequired ?? false;
+    this.#privateKeyPem = options.privateKeyPem;
     this.#failWriteForEvent = options.failWriteForEvent;
   }
 
@@ -196,10 +202,20 @@ export class AuditLog {
       try {
         if (this.#writeFailed) throw new Error("Audit session cannot be sealed after a failed write");
         if (this.#started) {
+          const seal = {
+            auditFormat: AUDIT_FORMAT_VERSION,
+            eventCount: this.#sequence,
+            finalEventHash: this.#previousHash,
+            sessionId: this.sessionId
+          };
+          const signature = this.#privateKeyPem === undefined
+            ? this.#signingRequired ? (() => { throw new Error("Signed audit seal required but no Ed25519 private key was configured"); })() : undefined
+            : signAuditSeal(seal, this.#privateKeyPem);
           await this.#writeEvent(SESSION_SEAL_EVENT, {
             auditFormat: AUDIT_FORMAT_VERSION,
             eventCount: this.#sequence,
-            finalEventHash: this.#previousHash
+            finalEventHash: this.#previousHash,
+            ...(signature === undefined ? {} : { signature })
           });
         }
       } finally {
@@ -263,7 +279,39 @@ export class AuditLog {
 export type AuditVerification = { valid: boolean; eventCount: number; errors: string[] };
 export type VerifiedAuditRead = { verification: AuditVerification; events: AuditEvent[]; content: string };
 
-function verifyAuditContent(content: string): Omit<VerifiedAuditRead, "content"> {
+type AuditSeal = { auditFormat: number; eventCount: number; finalEventHash: string; sessionId: string };
+
+function signAuditSeal(seal: AuditSeal, privateKeyPem: string): { algorithm: "ed25519"; keyId: string; publicKey: string; value: string } {
+  const privateKey = createPrivateKey(privateKeyPem);
+  if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("Audit seal signing requires an Ed25519 private key");
+  const publicKey = createPublicKey(privateKey).export({ type: "spki", format: "pem" }).toString();
+  return { algorithm: "ed25519", keyId: sha256(publicKey), publicKey, value: sign(null, Buffer.from(canonicalJson(seal), "utf8"), privateKey).toString("base64") };
+}
+
+function verifyAuditSeal(value: unknown, seal: AuditSeal, trustedPublicKeyPem: string | undefined, errors: string[]): void {
+  if (value === undefined || value === null || typeof value !== "object") {
+    errors.push("audit session seal signature is missing");
+    return;
+  }
+  const signature = value as Record<string, unknown>;
+  if (signature.algorithm !== "ed25519" || typeof signature.keyId !== "string" || typeof signature.publicKey !== "string" || typeof signature.value !== "string") {
+    errors.push("audit session seal signature is malformed");
+    return;
+  }
+  try {
+    const key = createPublicKey(signature.publicKey);
+    const publicKey = key.export({ type: "spki", format: "pem" }).toString();
+    if (key.asymmetricKeyType !== "ed25519") errors.push("audit session seal key is not Ed25519");
+    if (signature.keyId !== sha256(publicKey)) errors.push("audit session seal key id is invalid");
+    if (!verify(null, Buffer.from(canonicalJson(seal), "utf8"), key, Buffer.from(signature.value, "base64"))) errors.push("audit session seal signature is invalid");
+    if (trustedPublicKeyPem !== undefined) {
+      const trusted = createPublicKey(trustedPublicKeyPem).export({ type: "spki", format: "pem" }).toString();
+      if (trusted !== publicKey) errors.push("audit session seal key is not the configured trusted operator key");
+    }
+  } catch { errors.push("audit session seal public key is invalid"); }
+}
+
+function verifyAuditContent(content: string, expectedSessionId?: string, trustedPublicKeyPem?: string): Omit<VerifiedAuditRead, "content"> {
   const rawLines = content.split(/\r?\n/);
   if (rawLines.at(-1) === "") rawLines.pop();
   const errors: string[] = [];
@@ -297,6 +345,7 @@ function verifyAuditContent(content: string): Omit<VerifiedAuditRead, "content">
   }
 
   if (events.length !== rawLines.length) return { verification: { valid: false, eventCount: events.length, errors }, events };
+  if (expectedSessionId !== undefined && sessionId !== expectedSessionId) errors.push("audit session id does not match the file name");
   const starts = events.filter((event) => event.eventType === SESSION_START_EVENT);
   const seals = events.filter((event) => event.eventType === SESSION_SEAL_EVENT);
   const first = events[0];
@@ -310,21 +359,25 @@ function verifyAuditContent(content: string): Omit<VerifiedAuditRead, "content">
     const prior = events.at(-2);
     if (last.payload.eventCount !== events.length - 1) errors.push("audit session seal event count is invalid");
     if (last.payload.finalEventHash !== prior?.eventHash) errors.push("audit session seal does not bind the final event");
+    const seal: AuditSeal = { auditFormat: AUDIT_FORMAT_VERSION, eventCount: Number(last.payload.eventCount), finalEventHash: String(last.payload.finalEventHash), sessionId: last.sessionId };
+    if (last.payload.signature !== undefined) verifyAuditSeal(last.payload.signature, seal, trustedPublicKeyPem, errors);
+    else if (trustedPublicKeyPem !== undefined) errors.push("audit session seal is unsigned");
   }
   return { verification: { valid: errors.length === 0, eventCount: events.length, errors }, events };
 }
 
-export async function verifyAndReadAuditFile(filePath: string): Promise<VerifiedAuditRead> {
+export async function verifyAndReadAuditFile(filePath: string, trustedPublicKeyPem?: string, expectedSessionId?: string): Promise<VerifiedAuditRead> {
   const content = await readFile(filePath, "utf8");
-  return { ...verifyAuditContent(content), content };
+  const fileSessionId = expectedSessionId ?? path.basename(filePath).replace(/\.jsonl$/i, "");
+  return { ...verifyAuditContent(content, fileSessionId, trustedPublicKeyPem), content };
 }
 
-export async function readAuditEvents(filePath: string): Promise<AuditEvent[]> {
-  const { verification, events } = await verifyAndReadAuditFile(filePath);
+export async function readAuditEvents(filePath: string, expectedSessionId?: string): Promise<AuditEvent[]> {
+  const { verification, events } = await verifyAndReadAuditFile(filePath, undefined, expectedSessionId);
   if (!verification.valid) throw new Error(`Audit verification failed: ${verification.errors.join("; ")}`);
   return events;
 }
 
-export async function verifyAuditFile(filePath: string): Promise<AuditVerification> {
-  return (await verifyAndReadAuditFile(filePath)).verification;
+export async function verifyAuditFile(filePath: string, trustedPublicKeyPem?: string): Promise<AuditVerification> {
+  return (await verifyAndReadAuditFile(filePath, trustedPublicKeyPem)).verification;
 }

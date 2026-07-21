@@ -213,7 +213,7 @@ const baselineToolSchema = z.object({
 });
 
 export const trustBaselineSchema = z.object({
-  version: z.literal(3),
+  version: z.literal(4),
   targetName: z.string(),
   toolbastionVersion: z.string(),
   artifactIdentity: targetArtifactIdentitySchema,
@@ -244,23 +244,8 @@ function requiredCapabilities(toolName: string, capabilities: CapabilityDeclarat
   return capabilityContractSchema.parse(contract);
 }
 
-function fallbackArtifactIdentity(targetName: string, tools: ListedTool[]): TargetArtifactIdentity {
-  const buildHash = sha256(tools.map((tool) => ({ name: tool.name, description: tool.description ?? "", inputSchema: tool.inputSchema })));
-  return {
-    kind: "executable",
-    executablePath: `unbound:${targetName}`,
-    executableHash: sha256({ targetName }),
-    buildHash
-  };
-}
-
-export function createTrustBaseline(targetName: string, tools: ListedTool[], capabilities: CapabilityDeclarations, artifactIdentityOrNow?: TargetArtifactIdentity | Date, maybeNow = new Date()): TrustBaseline {
-  assertUniqueToolNames(tools, "Current tool inventory");
-  const artifactIdentity = artifactIdentityOrNow instanceof Date || artifactIdentityOrNow === undefined
-    ? fallbackArtifactIdentity(targetName, tools)
-    : artifactIdentityOrNow;
-  const now = artifactIdentityOrNow instanceof Date ? artifactIdentityOrNow : maybeNow;
-  const normalizedTools = tools.map((tool) => {
+function normalizedTools(tools: ListedTool[], capabilities: CapabilityDeclarations) {
+  return tools.map((tool) => {
     const description = tool.description ?? "";
     return {
       name: tool.name,
@@ -272,7 +257,11 @@ export function createTrustBaseline(targetName: string, tools: ListedTool[], cap
       capabilities: requiredCapabilities(tool.name, capabilities)
     };
   }).sort((left, right) => left.name.localeCompare(right.name));
-  const unsigned = { version: 3 as const, targetName, toolbastionVersion: TOOLBASTION_VERSION, artifactIdentity, createdAt: now.toISOString(), tools: normalizedTools };
+}
+
+export function createTrustBaseline(targetName: string, tools: ListedTool[], capabilities: CapabilityDeclarations, artifactIdentity: TargetArtifactIdentity, now = new Date()): TrustBaseline {
+  assertUniqueToolNames(tools, "Current tool inventory");
+  const unsigned = { version: 4 as const, targetName, toolbastionVersion: TOOLBASTION_VERSION, artifactIdentity: targetArtifactIdentitySchema.parse(artifactIdentity), createdAt: now.toISOString(), tools: normalizedTools(tools, capabilities) };
   return { ...unsigned, baselineHash: sha256(unsigned) };
 }
 
@@ -282,6 +271,9 @@ export function verifyTrustBaseline(input: unknown): TrustBaseline {
   }
   if (z.object({ version: z.literal(2) }).passthrough().safeParse(input).success) {
     throw new Error("Trust baseline v2 is missing target artifact identity; run trust migrate --yes after reviewing the target artifact");
+  }
+  if (z.object({ version: z.literal(3) }).passthrough().safeParse(input).success) {
+    throw new Error("Trust baseline v3 uses an incomplete target artifact identity; run trust migrate --yes after reviewing the target dependency closure");
   }
   const baseline = trustBaselineSchema.parse(input);
   assertUniqueToolNames(baseline.tools, "Trust baseline");
@@ -307,7 +299,7 @@ export function diffTrustBaseline(baseline: TrustBaseline, tools: ListedTool[], 
     throw new Error(`Trust baseline target does not match configured target: ${baseline.targetName}`);
   }
   assertUniqueToolNames(tools, "Current tool inventory");
-  const current = new Map(createTrustBaseline(baseline.targetName, tools, capabilities).tools.map((tool) => [tool.name, tool]));
+  const current = new Map(normalizedTools(tools, capabilities).map((tool) => [tool.name, tool]));
   const approved = new Map(baseline.tools.map((tool) => [tool.name, tool]));
   const result: TrustDiff = {
     added: [], removed: [], schemaChanged: [], descriptionChanged: [], capabilityChanged: [], poisoned: [], unchanged: [],

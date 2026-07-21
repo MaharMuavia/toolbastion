@@ -37,6 +37,8 @@ describe("target environment isolation", () => {
     await mkdir(root, { recursive: true });
     const entry = path.join(root, "target.js");
     try {
+      await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "artifact-fixture", version: "1.0.0", private: true, type: "module" }), "utf8");
+      await writeFile(path.join(root, "package-lock.json"), JSON.stringify({ name: "artifact-fixture", version: "1.0.0", lockfileVersion: 3, packages: { "": { name: "artifact-fixture", version: "1.0.0" } } }), "utf8");
       await writeFile(entry, "export const version = 1;\n", "utf8");
       const target = { name: "artifact-target", command: process.execPath, args: [entry], cwd: root, envAllowlist: [] };
       const first = await resolveTargetArtifactIdentity(target, root);
@@ -45,6 +47,47 @@ describe("target environment isolation", () => {
       if (first.kind !== "executable" || second.kind !== "executable") throw new Error("Expected executable artifact identities");
       expect(first.executableHash).toBe(second.executableHash);
       expect(first.buildHash).not.toBe(second.buildHash);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("binds local dependencies and the lockfile to the target identity", async () => {
+    const root = path.join(os.tmpdir(), `toolbastion-dependency-${randomUUID()}`);
+    await mkdir(root, { recursive: true });
+    const entry = path.join(root, "target.js");
+    const dependency = path.join(root, "dependency.js");
+    try {
+      await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "dependency-fixture", version: "1.0.0", private: true, type: "module" }), "utf8");
+      await writeFile(path.join(root, "package-lock.json"), JSON.stringify({ name: "dependency-fixture", version: "1.0.0", lockfileVersion: 3, packages: { "": { name: "dependency-fixture", version: "1.0.0" } } }), "utf8");
+      await writeFile(dependency, "export const value = 1;\n", "utf8");
+      await writeFile(entry, "import { value } from './dependency.js'; export { value };\n", "utf8");
+      const target = { name: "dependency-target", command: process.execPath, args: [entry], cwd: root, envAllowlist: [] };
+      const first = await resolveTargetArtifactIdentity(target, root);
+      await writeFile(dependency, "export const value = 2;\n", "utf8");
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      const dependencyChanged = await resolveTargetArtifactIdentity(target, root);
+      await writeFile(path.join(root, "package-lock.json"), JSON.stringify({ name: "dependency-fixture", version: "1.0.1", lockfileVersion: 3, packages: { "": { name: "dependency-fixture", version: "1.0.1" } } }), "utf8");
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      const lockfileChanged = await resolveTargetArtifactIdentity(target, root);
+      if (first.kind !== "executable" || dependencyChanged.kind !== "executable" || lockfileChanged.kind !== "executable") throw new Error("Expected executable artifact identities");
+      expect(first.dependencyClosureHash).not.toBe(dependencyChanged.dependencyClosureHash);
+      expect(dependencyChanged.lockfileHash).not.toBe(lockfileChanged.lockfileHash);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects dynamic and incomplete non-Docker artifact identities", async () => {
+    const root = path.join(os.tmpdir(), `toolbastion-dynamic-${randomUUID()}`);
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "dynamic-fixture", version: "1.0.0", private: true, type: "module" }), "utf8");
+      await writeFile(path.join(root, "package-lock.json"), JSON.stringify({ name: "dynamic-fixture", version: "1.0.0", lockfileVersion: 3, packages: { "": { name: "dynamic-fixture", version: "1.0.0" } } }), "utf8");
+      const dynamicEntry = path.join(root, "dynamic.js");
+      await writeFile(dynamicEntry, "const moduleName = './dependency.js'; await import(moduleName);\n", "utf8");
+      const target = { name: "dynamic-target", command: process.execPath, args: [dynamicEntry], cwd: root, envAllowlist: [] };
+      await expect(resolveTargetArtifactIdentity(target, root)).rejects.toThrow("Dynamic artifact dependency resolution is unsupported");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -50,7 +50,10 @@ jobs:
         run: npm run test:docker-isolation
       - run: npm run test:e2e
       - run: npm run artifact:prepare
+      - run: npm run build:standalone
+      - run: npm run pack:smoke
       - run: git diff --exit-code -- apps/dashboard/public/snapshot
+      - run: git diff --check
       - run: npm audit --audit-level=high
       - name: Secret scan
         shell: bash

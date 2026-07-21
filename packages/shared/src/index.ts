@@ -44,6 +44,13 @@ export const targetArtifactIdentitySchema = z.discriminatedUnion("kind", [
     kind: z.literal("executable"),
     executablePath: z.string().min(1),
     executableHash: sha256HexSchema,
+    entrypointPath: z.string().min(1),
+    entrypointHash: sha256HexSchema,
+    manifestPath: z.string().min(1),
+    manifestHash: sha256HexSchema,
+    lockfilePath: z.string().min(1),
+    lockfileHash: sha256HexSchema,
+    dependencyClosureHash: sha256HexSchema,
     buildHash: sha256HexSchema
   }).strict()
 ]);
@@ -344,7 +351,11 @@ const writableMountPathSchema = z.string().trim().min(1).refine((value) => {
   if (path.isAbsolute(value)) return false;
   const normalized = value.replaceAll("\\", "/");
   if (normalized.split("/").includes("..")) return false;
-  return normalized !== "." && normalized !== "./" && !normalized.includes("*");
+  if (normalized !== "." && normalized !== "./" && !normalized.includes("*")) {
+    const first = normalized.replace(/^\.\//, "").split("/")[0]?.toLowerCase();
+    return first !== ".git" && first !== "node_modules" && first !== ".toolbastion";
+  }
+  return false;
 }, "writable_paths must be narrow, relative directories below project_root");
 
 const targetIsolationSchema = z.discriminatedUnion("provider", [
@@ -358,7 +369,18 @@ const targetIsolationSchema = z.discriminatedUnion("provider", [
     cpus: z.number().positive().max(4).default(1),
     pids_limit: z.number().int().min(32).max(1_024).default(256),
     tmpfs_size_mb: z.number().int().min(16).max(1_024).default(64)
-  }).strict()
+  }).strict().superRefine((isolation, context) => {
+    const normalized = isolation.writable_paths.map((value) => value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "").toLowerCase());
+    for (let index = 0; index < normalized.length; index += 1) {
+      for (let other = index + 1; other < normalized.length; other += 1) {
+        const left = normalized[index] ?? "";
+        const right = normalized[other] ?? "";
+        if (left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`)) {
+          context.addIssue({ code: "custom", path: ["writable_paths", other], message: "writable_paths must not contain duplicate or overlapping containment paths" });
+        }
+      }
+    }
+  })
 ]).default({ provider: "none" });
 
 export const targetServerConfigSchema = z.object({
@@ -470,6 +492,7 @@ const runtimeEventsSchema = z.object({
 export const toolbastionConfigSchema = z.object({
   version: z.literal(1),
   mode: runtimeModeSchema.default("interactive"),
+  profile: z.enum(["standard", "strict"]).default("standard"),
   project_root: z.string().default("./"),
   target: targetServerConfigSchema,
   paths: pathPolicySchema,
@@ -493,8 +516,14 @@ export const toolbastionConfigSchema = z.object({
   }).strict().prefault({}),
   audit: z.object({
     directory: projectRelativeDirectorySchema.default("./.toolbastion/audit"),
-    retain_raw_content: z.literal(false).default(false)
-  }).strict().prefault({}),
+    retain_raw_content: z.literal(false).default(false),
+    signing_required: z.boolean().optional(),
+    signingRequired: z.boolean().optional()
+  }).strict().prefault({}).superRefine((value, context) => {
+    if (value.signing_required !== undefined && value.signingRequired !== undefined && value.signing_required !== value.signingRequired) {
+      context.addIssue({ code: "custom", path: ["signing_required"], message: "signing_required conflicts with normalized signingRequired" });
+    }
+  }).transform(({ signing_required, signingRequired, ...value }) => ({ ...value, signingRequired: signing_required ?? signingRequired ?? false })),
   runtime_events: runtimeEventsSchema,
   receipts: receiptSchema,
   remediation: z.object({
@@ -505,6 +534,12 @@ export const toolbastionConfigSchema = z.object({
     timeout_ms: z.number().int().positive().max(300_000).default(120_000)
   }).strict().prefault({})
 }).strict().superRefine((config, context) => {
+  if (config.profile === "strict") {
+    if (config.mode !== "enforce") context.addIssue({ code: "custom", path: ["mode"], message: "strict profile requires enforce mode" });
+    if (config.target.isolation.provider !== "docker") context.addIssue({ code: "custom", path: ["target", "isolation"], message: "strict profile requires Docker containment for every target" });
+    if (!config.receipts.signingRequired) context.addIssue({ code: "custom", path: ["receipts", "signing_required"], message: "strict profile requires signed receipts" });
+    if (!config.audit.signingRequired) context.addIssue({ code: "custom", path: ["audit", "signing_required"], message: "strict profile requires a signed audit seal" });
+  }
   if (config.target.isolation.provider === "docker") {
     if (config.target.cwd !== undefined && (path.isAbsolute(config.target.cwd) || config.target.cwd.replaceAll("\\", "/").split("/").includes(".."))) {
       context.addIssue({ code: "custom", path: ["target", "cwd"], message: "Docker-isolated target cwd must be relative to project_root" });

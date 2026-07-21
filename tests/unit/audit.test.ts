@@ -158,6 +158,25 @@ describe("tamper-evident audit log", () => {
     expect((await verifyAuditFile(log.filePath)).valid).toBe(false);
   });
 
+  it("signs the session seal and fails closed for the wrong key or a replacement file", async () => {
+    const directory = path.join(os.tmpdir(), `toolbastion-audit-signed-${crypto.randomUUID()}`);
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+    const log = new AuditLog(directory, "signed-session", { retainRawContent: false, signingRequired: true, privateKeyPem });
+    files.push(log.filePath);
+    await log.append("decision", { decision: "BLOCK" });
+    await log.close();
+    expect((await verifyAuditFile(log.filePath, publicKeyPem)).valid).toBe(true);
+    const wrongKey = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+    const wrongVerification = await verifyAuditFile(log.filePath, wrongKey);
+    expect(wrongVerification.valid).toBe(false);
+    expect(wrongVerification.errors.join(" ")).toContain("configured trusted operator key");
+    const replacement = path.join(directory, "replacement-session.jsonl");
+    await writeFile(replacement, await readFile(log.filePath, "utf8"), "utf8");
+    expect((await verifyAuditFile(replacement, publicKeyPem)).errors.join(" ")).toContain("file name");
+  });
+
   it("only resolves audit reads within the canonical project root", async () => {
     const root = path.join(os.tmpdir(), `toolbastion-audit-root-${crypto.randomUUID()}`);
     const auditDirectory = path.join(root, ".toolbastion", "audit");

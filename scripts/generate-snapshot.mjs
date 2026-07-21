@@ -38,7 +38,7 @@ for (const event of session.events) {
 appendAuditEvent("audit-seal", session.events.at(-1)?.timestamp ?? session.startedAt, "audit_session_sealed", { auditFormat: 2, eventCount: auditEvents.length, finalEventHash: previousHash });
 const auditPath = path.join(destination, "audit.jsonl");
 await writeFile(auditPath, `${auditEvents.map(canonicalJson).join("\n")}\n`, "utf8");
-const report = await generateSessionReport(auditPath, session.startedAt);
+const report = await generateSessionReport(auditPath, session.startedAt, session.sessionId);
 await writeFile(path.join(destination, "session.json"), `${JSON.stringify({ ...session, metrics: snapshotMetrics, staticLabel: "Read-only recorded security session" }, null, 2)}\n`, "utf8");
 await writeFile(path.join(destination, "scenarios.json"), scenarios, "utf8");
 await writeFile(path.join(destination, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");

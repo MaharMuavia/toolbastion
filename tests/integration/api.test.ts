@@ -59,6 +59,18 @@ describe("dashboard API", () => {
     } finally { await protectedApp.close(); }
   });
 
+  it("rate-limits repeated requests per client", async () => {
+    const limitedApp = await createApi({ rootDir: root, rateLimitPerMinute: 2, dashboardRoot: path.join(root, "apps", "dashboard", "dist") });
+    try {
+      await limitedApp.ready();
+      expect((await limitedApp.inject({ method: "GET", url: "/api/health" })).statusCode).toBe(200);
+      expect((await limitedApp.inject({ method: "GET", url: "/api/health" })).statusCode).toBe(200);
+      const limited = await limitedApp.inject({ method: "GET", url: "/api/health" });
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json()).toEqual({ error: "rate_limit_exceeded" });
+    } finally { await limitedApp.close(); }
+  });
+
   it("serves the production dashboard from the localhost API", async () => {
     const response = await app.inject({ method: "GET", url: "/" });
     expect(response.statusCode).toBe(200);
@@ -166,7 +178,19 @@ describe("dashboard API", () => {
     const projectRoot = path.join(directory, "project");
     const configPath = path.join(directory, "toolbastion.config.json");
     await mkdir(projectRoot, { recursive: true });
-    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline("configured-target", [], {}));
+    await writeTrustBaseline(path.join(projectRoot, ".toolbastion", "toolbastion.lock.json"), createTrustBaseline("configured-target", [], {}, {
+      kind: "executable",
+      executablePath: "C:/target/node.exe",
+      executableHash: "a".repeat(64),
+      entrypointPath: "./dist/index.js",
+      entrypointHash: "b".repeat(64),
+      manifestPath: "./package.json",
+      manifestHash: "c".repeat(64),
+      lockfilePath: "./package-lock.json",
+      lockfileHash: "d".repeat(64),
+      dependencyClosureHash: "e".repeat(64),
+      buildHash: "f".repeat(64)
+    }));
     await writeFile(configPath, JSON.stringify({
       version: 1,
       mode: "shadow",

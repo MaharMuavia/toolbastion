@@ -59,6 +59,14 @@ describe("Docker target isolation", () => {
   });
 
   it("rejects mutable images, host-absolute execution paths, and unisolated egress exceptions", () => {
+    for (const writablePaths of [["src", "src"], ["src", "src/generated"], [".git"], ["node_modules"]]) {
+      expect(() => toolbastionConfigSchema.parse({
+        version: 1,
+        mode: "enforce",
+        target: { name: "target", command: "node", isolation: { provider: "docker", image, writable_paths: writablePaths } }
+      })).toThrow();
+    }
+
     expect(() => toolbastionConfigSchema.parse({
       version: 1,
       mode: "enforce",

@@ -39,6 +39,19 @@ const config = toolbastionConfigSchema.parse({
   } },
   judge: { enabled: true, mode: "offline" }
 });
+const evaluationArtifactIdentity = {
+  kind: "executable",
+  executablePath: "C:/toolbastion/evaluation-node",
+  executableHash: "a".repeat(64),
+  entrypointPath: "./src/index.ts",
+  entrypointHash: "b".repeat(64),
+  manifestPath: "./package.json",
+  manifestHash: "c".repeat(64),
+  lockfilePath: "./package-lock.json",
+  lockfileHash: "d".repeat(64),
+  dependencyClosureHash: "e".repeat(64),
+  buildHash: "f".repeat(64)
+};
 
 const load = async (file) => JSON.parse(await readFile(path.join(root, file), "utf8"));
 const requestAttacks = (await load("fixtures/attacks/day2-corpus.json")).map((item) => ({ ...item, kind: item.category === "tool_schema_change" || item.category === "poisoned_tool_metadata" ? "trust" : "request", attack: true }));
@@ -113,7 +126,7 @@ for (const fixture of fixtures) {
       evidence = aggregate.reasonCodes;
       escalated += 1;
     } else if (fixture.kind === "policy_tamper") {
-      const baseline = createTrustBaseline("evaluation", [{ name: "read", description: "safe", inputSchema: {} }], { read: { filesystem: "read", network: "none", command_exec: false, subprocess: false, destructive: false } });
+      const baseline = createTrustBaseline("evaluation", [{ name: "read", description: "safe", inputSchema: {} }], { read: { filesystem: "read", network: "none", command_exec: false, subprocess: false, destructive: false } }, evaluationArtifactIdentity);
       try { verifyTrustBaseline({ ...baseline, tools: [] }); requestDecision = "ALLOW"; }
       catch { requestDecision = "BLOCK"; evidence = ["invalid_baseline_hash"]; }
       deterministic += 1;

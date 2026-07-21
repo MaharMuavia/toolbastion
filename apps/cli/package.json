@@ -7,8 +7,21 @@
     "toolbastion": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsup ./src/index.ts --format esm --dts --clean",
+    "build": "tsup ./src/index.ts --format esm --dts --clean --no-config",
+    "build:standalone": "tsup --config package.json",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "tsup": {
+    "entry": ["./src/index.ts"],
+    "format": ["esm"],
+    "noExternal": ["@toolbastion"],
+    "external": ["@fastify/cors", "@fastify/static", "@modelcontextprotocol/sdk", "ajv", "ajv-formats", "commander", "diff", "fastify", "openai", "yaml", "zod"],
+    "outDir": "../../dist/standalone",
+    "clean": true,
+    "splitting": false,
+    "sourcemap": true,
+    "target": "es2022",
+    "platform": "node"
   },
   "dependencies": {
     "@toolbastion/audit": "0.1.4",

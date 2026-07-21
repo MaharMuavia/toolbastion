@@ -1,9 +1,24 @@
 {
   "name": "toolbastion",
   "version": "0.1.4",
-  "private": true,
+  "private": false,
   "license": "Apache-2.0",
   "description": "A security gateway and evidence layer for mediated MCP calls, with optional target-process containment.",
+  "bin": {
+    "toolbastion": "dist/standalone/index.js"
+  },
+  "files": [
+    "dist/standalone",
+    "apps/dashboard/dist",
+    "examples/benign-server/dist",
+    "examples/vulnerable-server/dist",
+    "fixtures",
+    "schemas",
+    "toolbastion.config.example.yaml",
+    "toolbastion.config.production.example.yaml",
+    "README.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/MaharMuavia/toolbastion.git"
@@ -27,6 +42,7 @@
     "dev:frontend": "npm run dev --workspace=@toolbastion/dashboard",
     "dev:proxy": "node ./apps/cli/dist/index.js run --config toolbastion.config.example.yaml",
     "build": "node ./scripts/build-workspaces.mjs",
+    "build:standalone": "npm run build && npm run build:standalone --workspace=@toolbastion/cli",
     "clean": "npm run clean --workspaces --if-present",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -41,7 +57,8 @@
     "benchmark": "node ./scripts/benchmark.mjs",
     "snapshot": "node ./scripts/generate-snapshot.mjs",
     "verify:snapshot": "node ./scripts/verify-snapshot.mjs",
-    "artifact:prepare": "npm run build && npm run evaluate && npm run snapshot && npm run build && npm run verify:snapshot"
+    "artifact:prepare": "npm run build && npm run evaluate && npm run snapshot && npm run build && npm run verify:snapshot",
+    "pack:smoke": "node ./scripts/pack-smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.31.0",
@@ -54,5 +71,18 @@
     "typescript": "5.8.3",
     "typescript-eslint": "8.38.0",
     "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "@fastify/cors": "11.3.0",
+    "@fastify/static": "10.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "commander": "15.0.0",
+    "diff": "9.0.0",
+    "fastify": "5.10.0",
+    "openai": "6.47.0",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
   }
 }

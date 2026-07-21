@@ -54,6 +54,9 @@ export type ApiOptions = {
   eventLogPath?: string;
   allowRemote?: boolean;
   accessToken?: string;
+  rateLimitPerMinute?: number;
+  sseMaxBytes?: number;
+  sseWriteTimeoutMs?: number;
 };
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -127,7 +130,23 @@ function metrics(session: SnapshotSession) {
 export async function createApi(options: ApiOptions) {
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
   const accessToken = options.accessToken === undefined ? undefined : requireValidAccessToken(options.accessToken);
+  const rateLimitPerMinute = options.rateLimitPerMinute ?? 120;
+  if (!Number.isInteger(rateLimitPerMinute) || rateLimitPerMinute < 1 || rateLimitPerMinute > 10_000) throw new Error("rateLimitPerMinute must be an integer between 1 and 10000");
+  const sseMaxBytes = options.sseMaxBytes ?? 1_048_576;
+  const sseWriteTimeoutMs = options.sseWriteTimeoutMs ?? 5_000;
+  if (!Number.isInteger(sseMaxBytes) || sseMaxBytes < 1_024 || sseMaxBytes > 16 * 1024 * 1024) throw new Error("sseMaxBytes is outside the supported range");
+  if (!Number.isInteger(sseWriteTimeoutMs) || sseWriteTimeoutMs < 100 || sseWriteTimeoutMs > 60_000) throw new Error("sseWriteTimeoutMs is outside the supported range");
+  const rateBuckets = new Map<string, { startedAt: number; count: number }>();
   let sseClients = 0;
+  app.addHook("onRequest", async (request, reply) => {
+    const now = Date.now();
+    const key = request.ip;
+    const prior = rateBuckets.get(key);
+    const bucket = prior === undefined || now - prior.startedAt >= 60_000 ? { startedAt: now, count: 1 } : { ...prior, count: prior.count + 1 };
+    rateBuckets.set(key, bucket);
+    if (rateBuckets.size > 10_000) for (const [candidate, value] of rateBuckets) if (now - value.startedAt >= 60_000) rateBuckets.delete(candidate);
+    if (bucket.count > rateLimitPerMinute) return reply.code(429).send({ error: "rate_limit_exceeded" });
+  });
   if (accessToken !== undefined) {
     app.addHook("onRequest", async (request, reply) => {
       const route = request.url.split("?", 1)[0] ?? "";
@@ -236,7 +255,7 @@ export async function createApi(options: ApiOptions) {
     } else {
       file = path.join(snapshotRoot, "audit.jsonl");
     }
-    const snapshot = await verifyAndReadAuditFile(file);
+    const snapshot = await verifyAndReadAuditFile(file, undefined, active.session.sessionId);
     if (!snapshot.verification.valid) return reply.code(409).send({ error: "audit_verification_failed", issues: snapshot.verification.errors });
     const content = snapshot.content;
     return reply.header("Content-Type", "application/x-ndjson; charset=utf-8").header("Content-Disposition", `attachment; filename="toolbastion-${sessionId}-redacted.jsonl"`).send(content);
@@ -271,28 +290,47 @@ export async function createApi(options: ApiOptions) {
     const active = await currentSession();
     sseClients += 1;
     let closed = false;
+    let pendingDrainTimer: ReturnType<typeof setTimeout> | undefined;
+    let bytesWritten = 0;
+    const writeChunk = (chunk: string): boolean => {
+      if (closed) return false;
+      const size = Buffer.byteLength(chunk, "utf8");
+      if (bytesWritten + size > sseMaxBytes) {
+        reply.raw.end();
+        close();
+        return false;
+      }
+      bytesWritten += size;
+      const writable = reply.raw.write(chunk);
+      if (!writable && pendingDrainTimer === undefined) {
+        pendingDrainTimer = setTimeout(() => { pendingDrainTimer = undefined; if (!closed) { reply.raw.end(); close(); } }, sseWriteTimeoutMs);
+      }
+      return true;
+    };
     const close = () => {
       if (!closed) {
         closed = true;
+        if (pendingDrainTimer !== undefined) clearTimeout(pendingDrainTimer);
         sseClients -= 1;
       }
     };
     reply.hijack();
     reply.raw.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-    for (const event of active.session.events) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    reply.raw.once("drain", () => { if (pendingDrainTimer !== undefined) { clearTimeout(pendingDrainTimer); pendingDrainTimer = undefined; } });
+    for (const event of active.session.events) if (!writeChunk(`data: ${JSON.stringify(event)}\n\n`)) return;
     if ((active.sourceState !== "LIVE_HEALTHY" && active.sourceState !== "LIVE_PARTIAL") || runtimeTailer === undefined) {
       reply.raw.end();
       close();
       return;
     }
     const sent = new Set(active.session.events.map((event) => event.eventId));
-    const heartbeat = setInterval(() => { reply.raw.write(": keep-alive\n\n"); }, 15_000);
+    const heartbeat = setInterval(() => { writeChunk(": keep-alive\n\n"); }, 15_000);
     heartbeat.unref();
     const unsubscribe = runtimeTailer.subscribe((update) => {
       if (update.type === "event") {
         if (sent.has(update.event.eventId)) return;
         sent.add(update.event.eventId);
-        reply.raw.write(`data: ${JSON.stringify(update.event)}\n\n`);
+        writeChunk(`data: ${JSON.stringify(update.event)}\n\n`);
         return;
       }
       if (update.state.sourceState !== "LIVE_HEALTHY" && update.state.sourceState !== "LIVE_PARTIAL") reply.raw.end();

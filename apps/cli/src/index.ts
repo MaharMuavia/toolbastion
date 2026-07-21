@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +8,7 @@ import process from "node:process";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { z, ZodError } from "zod";
 import { startApi } from "@toolbastion/api";
 import { readAuditEvents, resolveAuditReadFile, verifyAuditFile, verifyReceipt } from "@toolbastion/audit";
@@ -20,7 +20,11 @@ import { bastionReceiptSchema, formatZodIssues, runtimeEventSchema, sha256, TOOL
 import { runProfessionalDemo } from "./demo.js";
 
 const VERSION = TOOLBASTION_VERSION;
-const INSTALL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const CLI_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+const INSTALL_ROOT = [path.join(CLI_DIRECTORY, "..", ".."), path.join(CLI_DIRECTORY, "..", "..", "..")]
+  .map((candidate) => path.resolve(candidate))
+  .find((candidate) => existsSync(path.join(candidate, "package.json")) && existsSync(path.join(candidate, "fixtures")))
+  ?? path.resolve(path.join(CLI_DIRECTORY, "..", ".."));
 
 try { loadEnvFile(path.resolve(".env.local")); } catch { /* Live mode remains explicitly unavailable. */ }
 
@@ -97,10 +101,40 @@ const program = new Command()
 
 program.command("version").description("print the ToolBastion version").action(() => { process.stdout.write(`${VERSION}\n`); });
 
+program.command("init")
+  .description("write a reviewed starter policy for the bundled benign MCP target")
+  .option("-o, --output <path>", "policy output path", "toolbastion.config.yaml")
+  .option("--force", "replace an existing policy", false)
+  .action(async ({ output, force }: { output: string; force: boolean }) => {
+    const destination = path.resolve(output);
+    if (!force) {
+      try { await access(destination, constants.F_OK); throw new Error(`Refusing to overwrite existing policy: ${destination}`); }
+      catch (error) { if (error instanceof Error && error.message.startsWith("Refusing")) throw error; }
+    }
+    const benignEntry = path.relative(process.cwd(), path.join(INSTALL_ROOT, "examples", "benign-server", "dist", "index.js")).split(path.sep).join("/");
+    const config = {
+      version: 1,
+      mode: "interactive",
+      profile: "standard",
+      project_root: "./",
+      target: { name: "benign-demo", command: "node", args: [benignEntry], cwd: "./", env_allowlist: [] },
+      paths: { allow: ["./**"], deny: ["**/.env", "**/.env.*", "**/.ssh/**", "**/.aws/**", "**/.azure/**", "**/*credentials*", "**/*secret*"] },
+      network: { default: "deny", allow_domains: [], allow_subdomains: false, deny_private_ips: true, deny_loopback: true, deny_link_local: true, deny_metadata_endpoints: true, allowed_ports: [80, 443], target_egress: "blocked" },
+      tools: { default: "judge", rules: { echo: { base_risk: "low", action: "allow" } } },
+      capabilities: { tools: { echo: { filesystem: "none", network: "none", command_exec: false, subprocess: false, destructive: false } } },
+      judge: { enabled: false, mode: "offline" },
+      receipts: { enabled: true, directory: "./.toolbastion/receipts", signing_required: false },
+      audit: { directory: "./.toolbastion/audit", retain_raw_content: false, signing_required: false }
+    };
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, stringify(config), { encoding: "utf8", mode: 0o600 });
+    process.stdout.write(`CREATED ${destination}\nReview the target and capabilities, then run: toolbastion policy validate -c ${destination}\n`);
+  });
+
 const policy = program.command("policy").description("validate and inspect ToolBastion policy");
 policy.command("validate")
   .description("validate YAML and report precise paths")
-  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .option("-c, --config <path>", "configuration file", path.join(INSTALL_ROOT, "toolbastion.config.example.yaml"))
   .action(async ({ config }: { config: string }) => {
     const parsed = await loadConfig(config);
     process.stdout.write(`VALID ${config} (version ${parsed.version}, mode ${parsed.mode})\n`);
@@ -109,7 +143,7 @@ policy.command("validate")
 const trust = program.command("trust").description("manage persistent MCP tool trust");
 trust.command("create")
   .description("create an initial target-specific trust baseline; refuses to overwrite one")
-  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .option("-c, --config <path>", "configuration file", path.join(INSTALL_ROOT, "toolbastion.config.example.yaml"))
   .action(async ({ config: configPath }: { config: string }) => {
     const { config, tools, artifactIdentity } = await discover(configPath);
     const file = trustFile(config.project_root);
@@ -121,7 +155,7 @@ trust.command("create")
   });
 trust.command("approve")
   .description("approve a reviewed metadata diff for the configured target")
-  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .option("-c, --config <path>", "configuration file", path.join(INSTALL_ROOT, "toolbastion.config.example.yaml"))
   .requiredOption("--yes", "confirm that the displayed target metadata diff was reviewed")
   .option("--actor <identity>", "operator identity", process.env.USERNAME ?? process.env.USER ?? "unknown")
   .action(async ({ config: configPath, yes, actor }: { config: string; yes: boolean; actor: string }) => {
@@ -141,14 +175,14 @@ trust.command("approve")
   });
 trust.command("inspect")
   .description("inspect the approved baseline")
-  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .option("-c, --config <path>", "configuration file", path.join(INSTALL_ROOT, "toolbastion.config.example.yaml"))
   .action(async ({ config: configPath }: { config: string }) => {
     const config = await loadConfig(configPath);
     process.stdout.write(`${JSON.stringify(await readTrustBaseline(trustFile(config.project_root)), null, 2)}\n`);
   });
 trust.command("diff")
   .description("compare current tools with the approved baseline")
-  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .option("-c, --config <path>", "configuration file", path.join(INSTALL_ROOT, "toolbastion.config.example.yaml"))
   .action(async ({ config: configPath }: { config: string }) => {
     const { config, tools, artifactIdentity } = await discover(configPath);
     const diff = diffTrustBaseline(await readTrustBaseline(trustFile(config.project_root)), tools, config.capabilities.tools, config.target.name, artifactIdentity);
@@ -156,15 +190,15 @@ trust.command("diff")
     if (diff.artifactChanged || diff.added.length + diff.removed.length + diff.schemaChanged.length + diff.descriptionChanged.length + diff.capabilityChanged.length + diff.poisoned.length > 0) process.exitCode = 2;
   });
 trust.command("migrate")
-  .description("rebuild a reviewed v1/v2 baseline with explicit capability contracts and target artifact identity")
-  .option("-c, --config <path>", "configuration file", "toolbastion.config.yaml")
+  .description("rebuild a reviewed v1/v2/v3 baseline with explicit capability contracts and complete target artifact identity")
+  .option("-c, --config <path>", "configuration file", path.join(INSTALL_ROOT, "toolbastion.config.example.yaml"))
   .requiredOption("--yes", "confirm the current target metadata and capability contracts were reviewed")
   .action(async ({ config: configPath, yes }: { config: string; yes: boolean }) => {
     if (!yes) throw new Error("trust migrate requires --yes after reviewing the displayed target capabilities");
     const { config, tools, artifactIdentity } = await discover(configPath);
     const file = trustFile(config.project_root);
-    const previous = z.object({ version: z.union([z.literal(1), z.literal(2)]) }).passthrough().safeParse(JSON.parse(await readFile(file, "utf8")));
-    if (!previous.success) throw new Error("trust migrate only accepts an existing v1 or v2 baseline; use trust approve for a current v3 baseline");
+    const previous = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3)]) }).passthrough().safeParse(JSON.parse(await readFile(file, "utf8")));
+    if (!previous.success) throw new Error("trust migrate only accepts an existing v1, v2, or v3 baseline; use trust approve for a current v4 baseline");
     const baseline = createTrustBaseline(config.target.name, tools, config.capabilities.tools, artifactIdentity);
     await writeTrustBaseline(file, baseline);
     process.stdout.write(`MIGRATED ${file}\nBaseline ${baseline.baselineHash}\nTools ${baseline.tools.length}\n`);
@@ -173,10 +207,11 @@ trust.command("migrate")
 const audit = program.command("audit").description("verify tamper-evident session logs");
 audit.command("verify <session-id>")
   .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
-  .action(async (sessionId: string, { config: configPath }: { config: string }) => {
+  .option("--trusted-key <file>", "operator Ed25519 public key PEM required to anchor a signed seal")
+  .action(async (sessionId: string, { config: configPath, trustedKey }: { config: string; trustedKey?: string }) => {
     const config = await loadConfig(configPath);
     const file = await resolveAuditReadFile(config.project_root, config.audit.directory, sessionId);
-    const verification = await verifyAuditFile(file);
+    const verification = await verifyAuditFile(file, trustedKey === undefined ? undefined : await readFile(trustedKey, "utf8"));
     process.stdout.write(`${JSON.stringify({ sessionId, file, ...verification }, null, 2)}\n`);
     if (!verification.valid) process.exitCode = 2;
   });
@@ -377,18 +412,18 @@ program.command("doctor")
 
 program.command("dashboard")
   .description("start the localhost dashboard with explicit live-evidence source state")
-  .option("-c, --config <path>", "configuration file", "toolbastion.config.example.yaml")
+  .option("-c, --config <path>", "configuration file", path.join(INSTALL_ROOT, "toolbastion.config.example.yaml"))
   .option("-p, --port <number>", "localhost port", "4782")
   .option("--event-log <path>", "runtime event log produced by toolbastion run")
   .option("--expose", "acknowledge an intentional non-localhost API bind", false)
   .action(async ({ config, port, eventLog, expose }: { config: string; port: string; eventLog?: string; expose: boolean }) => {
     const parsedPort = Number(port);
     if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) throw new Error("Dashboard port must be between 1 and 65535");
-    const rootDir = process.cwd();
+    const rootDir = INSTALL_ROOT;
     await startApi({
       rootDir,
       configPath: path.resolve(config),
-      dashboardRoot: path.join(rootDir, "apps", "dashboard", "dist"),
+      dashboardRoot: path.join(INSTALL_ROOT, "apps", "dashboard", "dist"),
       allowRemote: expose,
       ...(eventLog === undefined ? {} : { eventLogPath: path.resolve(eventLog) })
     }, parsedPort);
@@ -493,7 +528,7 @@ program.command("run")
 
 program.command("demo")
   .description("run a real keyless MCP enforcement proof and verify its audit chain")
-  .option("--workspace <path>", "built ToolBastion workspace", process.cwd())
+  .option("--workspace <path>", "built ToolBastion workspace", INSTALL_ROOT)
   .option("--cleanup", "remove the ignored evidence directory after verification", false)
   .action(async (options: { workspace: string; cleanup: boolean }) => {
     const result = await runProfessionalDemo(path.resolve(options.workspace), { cleanup: options.cleanup });
