@@ -1,6 +1,6 @@
 {
   "name": "toolbastion",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
   "license": "Apache-2.0",
   "description": "A zero-trust security gateway for MCP tool calls.",
@@ -33,7 +33,7 @@
     "test": "vitest run tests/unit tests/integration",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "test:docker-isolation": "vitest run tests/integration/docker-isolation.test.ts",
+    "test:docker-isolation": "node ./scripts/test-docker-isolation.mjs",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "demo:offline": "node ./apps/cli/dist/index.js demo",

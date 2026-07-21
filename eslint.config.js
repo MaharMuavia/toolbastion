@@ -10,7 +10,10 @@ export default tseslint.config(
     languageOptions: {
       globals: globals.node,
       parserOptions: {
-        projectService: { allowDefaultProject: ["scripts/*.mjs"] },
+        projectService: {
+          allowDefaultProject: ["scripts/*.mjs"],
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 12
+        },
         tsconfigRootDir: import.meta.dirname
       }
     },

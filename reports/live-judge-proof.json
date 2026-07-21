@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-07-21T07:30:43.643Z",
+  "capturedAt": "2026-07-21T08:22:37.687Z",
   "provider": {
     "name": "openai-responses",
     "model": "gpt-5.6",
@@ -15,9 +15,9 @@
   "verdict": {
     "decision": "ALLOW",
     "riskLevel": "low",
-    "latencyMs": 10094,
+    "latencyMs": 10217,
     "inputTokens": 1686,
-    "outputTokens": 694,
+    "outputTokens": 726,
     "checks": [
       {
         "checkName": "scope_safety",

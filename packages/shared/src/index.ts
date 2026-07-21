@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import { z } from "zod";
 
-export const TOOLBASTION_VERSION = "0.1.0";
+export const TOOLBASTION_VERSION = "0.1.3";
 
 export const runtimeModeSchema = z.enum(["shadow", "interactive", "enforce"]);
 export type RuntimeMode = z.infer<typeof runtimeModeSchema>;

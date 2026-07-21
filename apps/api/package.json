@@ -1,6 +1,6 @@
 {
   "name": "@toolbastion/api",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "exports": "./dist/index.js",
@@ -9,10 +9,10 @@
   "dependencies": {
     "@fastify/cors": "11.3.0",
     "@fastify/static": "10.1.0",
-    "@toolbastion/audit": "0.1.0",
-    "@toolbastion/policy": "0.1.0",
-    "@toolbastion/reports": "0.1.0",
-    "@toolbastion/shared": "0.1.0",
+    "@toolbastion/audit": "0.1.3",
+    "@toolbastion/policy": "0.1.3",
+    "@toolbastion/reports": "0.1.3",
+    "@toolbastion/shared": "0.1.3",
     "fastify": "5.10.0",
     "yaml": "2.9.0",
     "zod": "4.4.3"

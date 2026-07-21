@@ -47,10 +47,7 @@ jobs:
       - run: npm run test:unit
       - run: npm run test:integration
       - name: Verify target Docker network isolation
-        shell: bash
-        run: |
-          image_id="$(docker build -q -f examples/vulnerable-server/Dockerfile.isolated .)"
-          TOOLBASTION_DOCKER_TEST_IMAGE="${image_id}" npm run test:docker-isolation
+        run: npm run test:docker-isolation
       - run: npm run test:e2e
       - run: npm run artifact:prepare
       - run: git diff --exit-code -- apps/dashboard/public/snapshot

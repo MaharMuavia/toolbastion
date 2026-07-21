@@ -1,6 +1,6 @@
 {
   "name": "@toolbastion/cli",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "bin": {
@@ -11,13 +11,13 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@toolbastion/audit": "0.1.0",
-    "@toolbastion/api": "0.1.0",
-    "@toolbastion/core": "0.1.0",
-    "@toolbastion/policy": "0.1.0",
-    "@toolbastion/remediation": "0.1.0",
-    "@toolbastion/reports": "0.1.0",
-    "@toolbastion/shared": "0.1.0",
+    "@toolbastion/audit": "0.1.3",
+    "@toolbastion/api": "0.1.3",
+    "@toolbastion/core": "0.1.3",
+    "@toolbastion/policy": "0.1.3",
+    "@toolbastion/remediation": "0.1.3",
+    "@toolbastion/reports": "0.1.3",
+    "@toolbastion/shared": "0.1.3",
     "@modelcontextprotocol/sdk": "1.29.0",
     "commander": "15.0.0",
     "yaml": "2.9.0",

@@ -4,7 +4,7 @@ This is a sanitized runtime-integration record for the OpenAI Build Week submiss
 
 ## Recorded run
 
-- Captured at: `2026-07-21T07:30:43.643Z`
+- Captured at: `2026-07-21T08:22:37.687Z`
 - Provider: OpenAI Responses API
 - Model: `gpt-5.6`
 - Response storage: `false`
@@ -12,8 +12,8 @@ This is a sanitized runtime-integration record for the OpenAI Build Week submiss
 - Structured subchecks: `scope_safety`, `exfiltration_risk`, and `tool_integrity`
 - Aggregate decision: `ALLOW`
 - Aggregate risk: `low`
-- Latency: `10094 ms`
-- Token usage: `1686` input and `694` output
+- Latency: `10217 ms`
+- Token usage: `1686` input and `726` output
 
 The executable record is [live-judge-proof.json](../reports/live-judge-proof.json). It stores only the timestamp, provider/model, storage setting, test-case identity, decision, risk, token counts, latency, and structured outcome enums. It does not store API keys, raw prompts, raw argument values, policy text, or model rationale.
 
