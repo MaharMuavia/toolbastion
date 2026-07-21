@@ -6,5 +6,5 @@
 - Honest deferred item: live GPT-5.6 acceptance previously reached OpenAI but returned account-inactive HTTP 429; the user asked to keep the selected API key on hold
 - External handoff required: configure/push a public repository, run Pages/release workflows, record/upload the public YouTube demo, and run `/feedback` in the primary Codex task
 - Publication rule: repository links, hosted URL, image, release, video URL, and feedback ID remain explicitly pending until each destination is verified
-- Packaging: release candidate version `0.1.4`; the final GitHub tag, image digest, checksums, and publication gates remain pending until the release commit is created and verified
+- Packaging: release candidate version `0.1.4`; the GitHub tag, image digest, checksums, and publication gates remain pending until the release commit is tagged and verified
 - Submission readiness: local engineering gates are implemented; remaining blockers are account-owned publication, live GPT-5.6 billing acceptance, video upload, and feedback ID

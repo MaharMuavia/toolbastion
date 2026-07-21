@@ -1,6 +1,6 @@
 # Release verification
 
-Run the following on a clean, network-capable release runner and record each exit code in a release-specific verification summary. The current `0.1.4` candidate was run locally after a clean install; its results are recorded in `docs/verification-summary.json`, but they are not evidence for a final commit or published tag.
+Run the following on a clean, network-capable release runner and record each exit code in a release-specific verification summary. The current `0.1.4` release commit was run locally after a clean install; its results are recorded in `docs/verification-summary.json`, but they are not evidence for a published tag or image.
 
 ```powershell
 npm.cmd ci

@@ -1,6 +1,6 @@
 # Submission checklist
 
-This checklist describes the `0.1.4` release candidate in the current working tree. Local gates below are evidence for this tree; no final release commit or GitHub tag has been created, so external publication claims remain pending.
+This checklist describes the `0.1.4` release candidate in the current commit. Local gates below are evidence for this commit; the GitHub tag and external publication claims remain pending.
 
 | Requirement | Status | Evidence | Remaining action |
 | --- | --- | --- | --- |
@@ -21,8 +21,8 @@ This checklist describes the `0.1.4` release candidate in the current working tr
 | Secret scan | Verified | Tracked-file credential-pattern scan found no matches; exit `0`. | Run again from the final release commit/history. |
 | `git diff --check` | Verified | Exit `0`; only Git line-ending normalization warnings were emitted. | Run after staging the final commit. |
 | Evaluation/snapshot hashes | Verified | Evaluation SHA-256 `8d13b9eb3aa73e2ab103281186455fb6feab8d0b715156587078c23daf6894db`; snapshot audit SHA-256 `2a644b52753ea0825bcc3d18cacb836123c4a42e1f6e62ae66fc5a7319c59443`. | Recompute after the final commit if artifacts change. |
-| GitHub Release `v0.1.4` | Pending | No final release commit/tag exists in this workspace. | Create the commit and tag, push them, then verify the release assets and image digest. |
+| GitHub Release `v0.1.4` | Pending | The release commit exists; the tag and GitHub release do not. | Create the tag, push it, then verify the release assets and image digest. |
 | YouTube video under 3 minutes | Human action pending | `docs/demo-script.md` exists; no video was supplied. | Record, review, and upload the video. |
 | Codex `/feedback` session ID | Human action pending | No session ID was supplied. | Run `/feedback` in the primary task and record the returned ID. |
 
-The project is not marked production-ready. External publication, final-commit lineage, release signing/provenance, video upload, and feedback ID still require human authority.
+The project is not marked production-ready. External publication, release signing/provenance, video upload, and feedback ID still require human authority.
